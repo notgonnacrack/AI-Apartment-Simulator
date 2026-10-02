@@ -10,7 +10,14 @@ from shapely.ops import unary_union
 
 # 한글 폰트 깨짐 방지 (윈도우 맑은 고딕)
 import platform
-if platform.system() == 'Windows':
+import os
+import matplotlib.font_manager as fm
+
+font_path = "NanumGothic.ttf"
+if os.path.exists(font_path):
+    fm.fontManager.addfont(font_path)
+    plt.rc('font', family='NanumGothic')
+elif platform.system() == 'Windows':
     plt.rc('font', family='Malgun Gothic')
 elif platform.system() == 'Darwin':
     plt.rc('font', family='AppleGothic')
