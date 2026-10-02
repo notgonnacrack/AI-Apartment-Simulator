@@ -26,31 +26,31 @@ else:
 plt.rcParams['axes.unicode_minus'] = False
 
 UNIT_TYPES = {
-    "26㎡(복도식)": (20.0, 12.0, 4, 26.0, "판상형"),
-    "31㎡(복도식)": (24.0, 12.0, 4, 31.0, "판상형"),
-    "36㎡(복도식)": (28.0, 12.0, 4, 36.0, "판상형"),
-    "41㎡(복도식)": (32.0, 12.0, 4, 41.0, "판상형"),
-    "46㎡(복도식)": (36.0, 12.0, 4, 46.0, "판상형"),
-    "55㎡(계단식)": (22.0, 14.0, 2, 55.0, "판상형"),
-    "59㎡(계단식)": (24.0, 14.0, 2, 59.0, "판상형"),
-    "65㎡(계단식)": (26.0, 15.0, 2, 65.0, "판상형"),
-    "74㎡(계단식)": (28.0, 15.5, 2, 74.0, "판상형"),
-    "84㎡(계단식)": (30.0, 16.0, 2, 84.0, "판상형"),
-    "84㎡(탑상형)": (24.0, 24.0, 3, 84.0, "L자형")
+    "26m²(복도식)": (20.0, 12.0, 4, 26.0, "판상형"),
+    "31m²(복도식)": (24.0, 12.0, 4, 31.0, "판상형"),
+    "36m²(복도식)": (28.0, 12.0, 4, 36.0, "판상형"),
+    "41m²(복도식)": (32.0, 12.0, 4, 41.0, "판상형"),
+    "46m²(복도식)": (36.0, 12.0, 4, 46.0, "판상형"),
+    "55m²(계단식)": (22.0, 14.0, 2, 55.0, "판상형"),
+    "59m²(계단식)": (24.0, 14.0, 2, 59.0, "판상형"),
+    "65m²(계단식)": (26.0, 15.0, 2, 65.0, "판상형"),
+    "74m²(계단식)": (28.0, 15.5, 2, 74.0, "판상형"),
+    "84m²(계단식)": (30.0, 16.0, 2, 84.0, "판상형"),
+    "84m²(탑상형)": (24.0, 24.0, 3, 84.0, "L자형")
 }
 
 SIZE_COLORS = {
-    "84㎡(탑상형)": "#3cb371",
-    "84㎡": "#6495ed",
-    "59㎡": "#00ced1",
-    "74㎡": "#ff7f50",
-    "65㎡": "#dda0dd",
-    "55㎡": "#ffd700",
-    "46㎡": "#4682b4",
-    "41㎡": "#ff69b4",
-    "36㎡": "#cd5c5c",
-    "31㎡": "#8fbc8f",
-    "26㎡": "#9370db"
+    "84m²(탑상형)": "#3cb371",
+    "84m²": "#6495ed",
+    "59m²": "#00ced1",
+    "74m²": "#ff7f50",
+    "65m²": "#dda0dd",
+    "55m²": "#ffd700",
+    "46m²": "#4682b4",
+    "41m²": "#ff69b4",
+    "36m²": "#cd5c5c",
+    "31m²": "#8fbc8f",
+    "26m²": "#9370db"
 }
 
 def get_base_windows(b_w, b_l, bldg_shape, units):
@@ -409,29 +409,29 @@ with col_input:
     
     st.write("초소형(복도식)")
     c1, c2, c3, c4, c5 = st.columns(5)
-    use_26 = c1.checkbox("26㎡", value=False)
-    use_31 = c2.checkbox("31㎡", value=False)
-    use_36 = c3.checkbox("36㎡", value=False)
-    use_41 = c4.checkbox("41㎡", value=False)
-    use_46 = c5.checkbox("46㎡", value=False)
+    use_26 = c1.checkbox("26m²", value=False)
+    use_31 = c2.checkbox("31m²", value=False)
+    use_36 = c3.checkbox("36m²", value=False)
+    use_41 = c4.checkbox("41m²", value=False)
+    use_46 = c5.checkbox("46m²", value=False)
     st.write("소형/중형(계단식)")
     c6, c7, c8, c9, c10 = st.columns(5)
-    use_55 = c6.checkbox("55㎡", value=False)
-    use_59 = c7.checkbox("59㎡", value=False)
-    use_65 = c8.checkbox("65㎡", value=False)
-    use_74 = c9.checkbox("74㎡", value=False)
-    use_84 = c10.checkbox("84㎡", value=True)
+    use_55 = c6.checkbox("55m²", value=False)
+    use_59 = c7.checkbox("59m²", value=False)
+    use_65 = c8.checkbox("65m²", value=False)
+    use_74 = c9.checkbox("74m²", value=False)
+    use_84 = c10.checkbox("84m²", value=True)
     selected_sizes = []
-    if use_26: selected_sizes.append("26㎡")
-    if use_31: selected_sizes.append("31㎡")
-    if use_36: selected_sizes.append("36㎡")
-    if use_41: selected_sizes.append("41㎡")
-    if use_46: selected_sizes.append("46㎡")
-    if use_55: selected_sizes.append("55㎡")
-    if use_59: selected_sizes.append("59㎡")
-    if use_65: selected_sizes.append("65㎡")
-    if use_74: selected_sizes.append("74㎡")
-    if use_84: selected_sizes.append("84㎡")
+    if use_26: selected_sizes.append("26m²")
+    if use_31: selected_sizes.append("31m²")
+    if use_36: selected_sizes.append("36m²")
+    if use_41: selected_sizes.append("41m²")
+    if use_46: selected_sizes.append("46m²")
+    if use_55: selected_sizes.append("55m²")
+    if use_59: selected_sizes.append("59m²")
+    if use_65: selected_sizes.append("65m²")
+    if use_74: selected_sizes.append("74m²")
+    if use_84: selected_sizes.append("84m²")
     
     if not selected_sizes:
         st.warning("최소 1개 이상의 평형을 선택해주세요.")
