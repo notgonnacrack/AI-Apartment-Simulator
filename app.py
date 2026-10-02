@@ -127,7 +127,7 @@ def is_valid_orientation(windows):
     return True
 
 @st.cache_data(show_spinner=False)
-def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=0, trap_top=0, trap_height=0, l_w=0, l_l=0, l_w_inner=0, l_l_inner=0, exclude_balcony=False, layout_version=18):
+def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=0, trap_top=0, trap_height=0, l_w=0, l_l=0, l_w_inner=0, l_l_inner=0, exclude_balcony=False, layout_version=18, flip_h=False):
     
     if site_shape_type == "직사각형":
         base_site_poly = Polygon([(0,0), (site_w,0), (site_w,site_l), (0,site_l)])
@@ -141,6 +141,12 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
     else:
         base_site_poly = Polygon([(0,0), (site_w,0), (site_w,site_l), (0,site_l)])
         
+    if flip_h:
+        import shapely.affinity
+        base_site_poly = shapely.affinity.scale(base_site_poly, xfact=-1, origin='center')
+        minx, _, _, _ = base_site_poly.bounds
+        base_site_poly = shapely.affinity.translate(base_site_poly, xoff=-minx)
+
     site_area = base_site_poly.area
     # 다각형의 안쪽으로 setback만큼 쪼그라든(Shrink) 실제 건축가능 영역 생성
     site_poly = base_site_poly.buffer(-setback_x)
@@ -372,6 +378,11 @@ with col_input:
         col_l1, col_l2 = st.columns(2)
         l_l = col_l1.number_input("세로 전체 길이 (m)", min_value=30, max_value=2000, value=200, step=10)
         l_l_inner = col_l2.number_input("파인 부분 세로 (m)", min_value=10, max_value=400, value=100, step=10)
+
+    flip_h = False
+    if site_shape_type in ["L자형", "ㄱ자형", "사다리꼴"]:
+        flip_h = st.checkbox("좌우 반전", value=False)
+
         # 예외 처리
         l_w_inner = min(l_w_inner, l_w - 10)
         l_l_inner = min(l_l_inner, l_l - 10)
@@ -488,7 +499,7 @@ with col_viz:
         st.session_state['last_inputs'] = inputs_tuple
         with st.spinner("AI가 최적의 배치를 찾고 있습니다... (약 10~20초 소요)"):
             bldgs, s_area, b_area = auto_optimize_layout(
-                site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=trap_bottom, trap_top=trap_top, trap_height=trap_height, l_w=l_w, l_l=l_l, l_w_inner=l_w_inner, l_l_inner=l_l_inner, exclude_balcony=exclude_balcony, layout_version=18)
+                site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=trap_bottom, trap_top=trap_top, trap_height=trap_height, l_w=l_w, l_l=l_l, l_w_inner=l_w_inner, l_l_inner=l_l_inner, exclude_balcony=exclude_balcony, layout_version=18, flip_h=flip_h)
             st.session_state['sim_result'] = (bldgs, s_area, b_area)
 
     if 'last_inputs' in st.session_state and st.session_state['last_inputs'] != inputs_tuple:
@@ -581,6 +592,12 @@ with col_viz:
             base_site_poly = Polygon([(0,0), (l_w - l_w_inner, 0), (l_w - l_w_inner, l_l_inner), (l_w, l_l_inner), (l_w, l_l), (0, l_l)])
         else:
             base_site_poly = Polygon([(0,0), (site_w,0), (site_w,site_l), (0,site_l)])
+            
+        if flip_h:
+            import shapely.affinity
+            base_site_poly = shapely.affinity.scale(base_site_poly, xfact=-1, origin='center')
+            minx, _, _, _ = base_site_poly.bounds
+            base_site_poly = shapely.affinity.translate(base_site_poly, xoff=-minx)
             
         site_poly = base_site_poly.buffer(-setback_x)
 
