@@ -648,12 +648,9 @@ with col_viz:
 
 
 
-        plot_min_x, plot_max_x = -30, site_w + 30
-        plot_min_y, plot_max_y = -30, site_l + 30
-        if school_w: plot_min_x = min(plot_min_x, minx - off_w - 100)
-        if school_e: plot_max_x = max(plot_max_x, maxx + off_e + 100)
-        if school_s: plot_min_y = min(plot_min_y, miny - off_s - 100)
-        if school_n: plot_max_y = max(plot_max_y, maxy + off_n + 100)
+
+        plot_min_x, plot_max_x = -15, site_w + 15
+        plot_min_y, plot_max_y = -15, site_l + 15
 
         fig.update_layout(
             xaxis=dict(scaleanchor="y", scaleratio=1, visible=False, range=[plot_min_x, plot_max_x]),
