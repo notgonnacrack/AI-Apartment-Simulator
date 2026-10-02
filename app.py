@@ -9,7 +9,13 @@ from shapely.affinity import translate, rotate as shapely_rotate
 from shapely.ops import unary_union
 
 # 한글 폰트 깨짐 방지 (윈도우 맑은 고딕)
-plt.rc('font', family='Malgun Gothic')
+import platform
+if platform.system() == 'Windows':
+    plt.rc('font', family='Malgun Gothic')
+elif platform.system() == 'Darwin':
+    plt.rc('font', family='AppleGothic')
+else:
+    plt.rc('font', family='NanumGothic')
 plt.rcParams['axes.unicode_minus'] = False
 
 UNIT_TYPES = {
