@@ -341,6 +341,7 @@ col_input, col_viz = st.columns([1, 2])
 with col_input:
     st.header("1. 일조 시뮬레이션 (동지 기준)")
     time_of_day = st.slider("시간대 (Time of Day)", min_value=9.0, max_value=15.0, value=12.0, step=0.5, format="%.1f 시")
+    show_shadow = st.checkbox("그림자 표시 (계산에는 영향 없음)", value=True)
     
     st.header("2. 대지 및 법규 조건")
     site_shape_type = st.selectbox("대지 형상 (Site Shape)", ["직사각형", "L자형", "ㄱ자형", "사다리꼴"])
@@ -620,7 +621,8 @@ with col_viz:
             shadow_poly = unary_union([poly, shifted_poly]).convex_hull
             
             sx, sy = shadow_poly.exterior.xy
-            ax.fill(sx, sy, alpha=0.3, facecolor='black', edgecolor='none')
+            if show_shadow:
+                ax.fill(sx, sy, alpha=0.3, facecolor='black', edgecolor='none')
             
             # 그림자 범위도 포함
             min_extent_x = min(min_extent_x, min(sx))
@@ -663,7 +665,7 @@ with col_viz:
                 min_extent_y = min(min_extent_y, min(py))
                 max_extent_y = max(max_extent_y, max(py))
 
-        ax.annotate('N', xy=(site_w - 20, site_l - 10), xytext=(site_w - 20, site_l - 30),
+        ax.annotate('N', xy=(site_w + 30, site_l + 30), xytext=(site_w + 30, site_l + 10),
                     arrowprops=dict(facecolor='black', shrink=0, width=3, headwidth=10),
                     fontsize=16, fontweight='bold', ha='center', va='top')
                     
@@ -674,7 +676,7 @@ with col_viz:
         for size in sorted(list(placed_sizes)):
             legend_patches.append(mpatches.Patch(color=SIZE_COLORS.get(size, SIZE_COLORS.get(size.split('(')[0], '#cccccc')), label=size.replace('계단식', '').replace('()', '')))
         if legend_patches:
-            ax.legend(handles=legend_patches, loc='upper right', bbox_to_anchor=(1.15, 1.0), title="평형 (전용면적)", title_fontsize='10', fontsize='9')
+            ax.legend(handles=legend_patches, loc='lower left', bbox_to_anchor=(1.01, 0.0), title="평형 (전용면적)", title_fontsize='10', fontsize='9')
 
         # 계산된 범위를 바탕으로 여유를 두고 화면 설정
         ax.set_xlim(min(-10, min_extent_x - 15), max(site_w + 10, max_extent_x + 15))
