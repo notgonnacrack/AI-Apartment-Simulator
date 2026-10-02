@@ -320,8 +320,8 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
     return buildings, site_area, bldg_area
 
 st.set_page_config(layout="wide", page_title="속 터져서 내가 직접 만들어본 공동주택 가배치")
-st.title("속 터져서 내가 직접 만들어본 공동주택 가배치 😤")
-st.caption("© 2026 김진우 (Jinwoo Kim). All rights reserved.")
+st.title("속 터져서 내가 직접 만들어 본 공동주택 假배치 😤")
+st.markdown("<div style='background-color: #ffe066; padding: 5px 15px; border-radius: 5px; display: inline-block; font-weight: 800; font-size: 1.1em; color: #333333; margin-bottom: 20px;'>© 2026 김진우 (Jinwoo Kim). All rights reserved.</div>", unsafe_allow_html=True)
 
 col_input, col_viz = st.columns([1, 2])
 
