@@ -76,8 +76,11 @@ def get_base_dividers(b_w, b_l, bldg_shape, units):
     elif bldg_shape in ["타워형", "L자형"]:
         t = b_w / 3.0
         dividers.append(((t, 0), (t, t)))
-        dividers.append(((t*2, 0), (t*2, t)))
         dividers.append(((0, t), (t, t)))
+        if units >= 4:
+            dividers.append(((t*2, 0), (t*2, t)))
+        if units >= 5:
+            dividers.append(((0, t*2), (t, t*2)))
     return dividers
 
 def create_building_poly(b_w, b_l, bldg_shape):
@@ -564,7 +567,8 @@ with col_viz:
         azimuth_deg = 180 + (time_of_day - 12) * 15
         altitude_deg = 29.0 - abs(time_of_day - 12) * 4.0
         
-        fig, ax = plt.subplots(figsize=(12, 10))
+        import plotly.graph_objects as go
+        fig = go.Figure()
         
         if site_shape_type == "직사각형":
             base_site_poly = Polygon([(0,0), (site_w,0), (site_w,site_l), (0,site_l)])
@@ -573,7 +577,7 @@ with col_viz:
         elif site_shape_type == "사다리꼴":
             offset = (trap_bottom - trap_top) / 2
             base_site_poly = Polygon([(0,0), (trap_bottom,0), (trap_bottom - offset, trap_height), (offset, trap_height)])
-        elif site_shape_type == "ㄱ자형":
+        elif site_shape_type == "역L자형":
             base_site_poly = Polygon([(0,0), (l_w - l_w_inner, 0), (l_w - l_w_inner, l_l_inner), (l_w, l_l_inner), (l_w, l_l), (0, l_l)])
         else:
             base_site_poly = Polygon([(0,0), (site_w,0), (site_w,site_l), (0,site_l)])
@@ -581,108 +585,85 @@ with col_viz:
         site_poly = base_site_poly.buffer(-setback_x)
 
         bx, by = base_site_poly.exterior.xy
-        ax.plot(bx, by, color='black', linewidth=2)
-        ax.fill(bx, by, color='#f0f8ff')
+        fig.add_trace(go.Scatter(x=list(bx), y=list(by), fill='toself', fillcolor='rgba(240, 248, 255, 1)', line=dict(color='black', width=2), hoverinfo='skip', showlegend=False))
         
         ix, iy = site_poly.exterior.xy
-        ax.plot(ix, iy, color='red', linewidth=1, linestyle='--')
+        fig.add_trace(go.Scatter(x=list(ix), y=list(iy), mode='lines', line=dict(color='red', width=1, dash='dash'), hoverinfo='skip', showlegend=False))
         
         minx, miny, maxx, maxy = base_site_poly.bounds
         
-        # 학교 영역 그리기 (도로 너비 반영)
-        off_n = max(5.0, road_n)
-        if school_n:
-            ax.add_patch(patches.Rectangle((minx, maxy + off_n), maxx - minx, 100, linewidth=2, edgecolor='#e6b800', facecolor='#fffacd', hatch='//'))
-            ax.text((minx+maxx)/2, maxy + off_n + 50, "북쪽 학교", color='#8b6508', ha='center', va='center', fontsize=14, fontweight='bold')
-        off_s = max(5.0, road_s)
-        if school_s:
-            ax.add_patch(patches.Rectangle((minx, miny - off_s - 100), maxx - minx, 100, linewidth=2, edgecolor='#e6b800', facecolor='#fffacd', hatch='//'))
-            ax.text((minx+maxx)/2, miny - off_s - 50, "남쪽 학교", color='#8b6508', ha='center', va='center', fontsize=14, fontweight='bold')
-        off_e = max(5.0, road_e)
-        if school_e:
-            ax.add_patch(patches.Rectangle((maxx + off_e, miny), 100, maxy - miny, linewidth=2, edgecolor='#e6b800', facecolor='#fffacd', hatch='//'))
-            ax.text(maxx + off_e + 50, (miny+maxy)/2, "동쪽 학교", color='#8b6508', ha='center', va='center', fontsize=14, fontweight='bold', rotation=270)
-        off_w = max(5.0, road_w)
-        if school_w:
-            ax.add_patch(patches.Rectangle((minx - off_w - 100, miny), 100, maxy - miny, linewidth=2, edgecolor='#e6b800', facecolor='#fffacd', hatch='//'))
-            ax.text(minx - off_w - 50, (miny+maxy)/2, "서쪽 학교", color='#8b6508', ha='center', va='center', fontsize=14, fontweight='bold', rotation=90)
+        def add_school(x0, y0, x1, y1, text, rotation):
+            fig.add_shape(type="rect", x0=x0, y0=y0, x1=x1, y1=y1, line=dict(color="#e6b800", width=2), fillcolor="rgba(255, 250, 205, 0.5)")
+            fig.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2, text=text, showarrow=False, font=dict(color='#8b6508', size=12), textangle=rotation)
 
-        
-        min_extent_x, max_extent_x = 0, site_w
-        min_extent_y, max_extent_y = 0, site_l
-        
-        for idx, (poly, bldg_shape, windows, dividers, b_floors, b_units, b_ns_dist, name) in enumerate(final_buildings):
-            b_h = b_floors * 3.0
-            shadow_length = b_h / math.tan(math.radians(altitude_deg))
-            shadow_dx = math.sin(math.radians(azimuth_deg - 180)) * shadow_length
-            shadow_dy = math.cos(math.radians(azimuth_deg - 180)) * shadow_length
-            
-            shifted_poly = translate(poly, xoff=shadow_dx, yoff=shadow_dy)
-            shadow_poly = unary_union([poly, shifted_poly]).convex_hull
-            
-            sx, sy = shadow_poly.exterior.xy
-            if show_shadow:
-                ax.fill(sx, sy, alpha=0.3, facecolor='black', edgecolor='none')
-            
-            # 그림자 범위도 포함
-            min_extent_x = min(min_extent_x, min(sx))
-            max_extent_x = max(max_extent_x, max(sx))
-            min_extent_y = min(min_extent_y, min(sy))
-            max_extent_y = max(max_extent_y, max(sy))
-            
-        for idx, (poly, bldg_shape, windows, dividers, b_floors, b_units, b_ns_dist, name) in enumerate(final_buildings):
+        off_n = max(5.0, road_n)
+        if school_n: add_school(minx, maxy + off_n, maxx, maxy + off_n + 100, "북쪽 학교", 0)
+        off_s = max(5.0, road_s)
+        if school_s: add_school(minx, miny - off_s - 100, maxx, miny - off_s, "남쪽 학교", 0)
+        off_e = max(5.0, road_e)
+        if school_e: add_school(maxx + off_e, miny, maxx + off_e + 100, maxy, "동쪽 학교", -90)
+        off_w = max(5.0, road_w)
+        if school_w: add_school(minx - off_w - 100, miny, minx - off_w, maxy, "서쪽 학교", -90)
+
+        if show_shadow:
+            shadow_x, shadow_y = [], []
+            for b in final_buildings:
+                poly, _, _, _, b_floors, _, _, _ = b
+                b_h = b_floors * 3.0
+                shadow_length = b_h / math.tan(math.radians(altitude_deg))
+                shadow_dx = math.sin(math.radians(azimuth_deg - 180)) * shadow_length
+                shadow_dy = math.cos(math.radians(azimuth_deg - 180)) * shadow_length
+                shifted_poly = translate(poly, xoff=shadow_dx, yoff=shadow_dy)
+                shadow_poly = unary_union([poly, shifted_poly]).convex_hull
+                sx, sy = shadow_poly.exterior.xy
+                shadow_x.extend(list(sx) + [None])
+                shadow_y.extend(list(sy) + [None])
+            fig.add_trace(go.Scatter(x=shadow_x, y=shadow_y, fill='toself', fillcolor='rgba(0,0,0,0.3)', mode='lines', line=dict(width=0), hoverinfo='skip', showlegend=False))
+
+        placed_sizes = set([b[7] for b in final_buildings])
+        for size in sorted(list(placed_sizes)):
+            color = SIZE_COLORS.get(size, SIZE_COLORS.get(size.split('(')[0], '#cccccc'))
+            fig.add_trace(go.Scatter(x=[None], y=[None], mode='markers', marker=dict(color=color, size=15, symbol='square'), name=size.replace('계단식', '').replace('()', ''), showlegend=True))
+
+        for idx, b in enumerate(final_buildings):
+            poly, bldg_shape, windows, dividers, b_floors, b_units, b_ns_dist, name = b
             x, y = poly.exterior.xy
-            
-            
             color = SIZE_COLORS.get(name, SIZE_COLORS.get(name.split('(')[0], '#cccccc'))
             
-            ax.fill(x, y, alpha=0.9, facecolor=color, edgecolor='#333333', linewidth=1)
+            hover_text = f"동: {idx+1}동<br>타입: {name}<br>층수: {b_floors}F<br>세대수: {b_units}세대<br>인동간격: {b_ns_dist:.1f}m"
+            fig.add_trace(go.Scatter(x=list(x), y=list(y), fill='toself', fillcolor=color, mode='lines', line=dict(color='#333333', width=1), text=hover_text, hoverinfo='text', showlegend=False))
             
+            div_x, div_y = [], []
             for ((x1, y1), (x2, y2)) in dividers:
-                ax.plot([x1, x2], [y1, y2], color='white', linewidth=1.5, linestyle='-')
-            
-            cx, cy = poly.centroid.coords[0]
-            label_text = f"{idx+1}동\n{b_floors}F x {b_units}호"
-            ax.text(cx, cy, label_text, color='white', ha='center', va='center', fontsize=9, fontweight='bold',
-                    bbox=dict(facecolor='black', alpha=0.3, edgecolor='none', boxstyle='round,pad=0.2'))
+                div_x.extend([x1, x2, None])
+                div_y.extend([y1, y2, None])
+            if div_x:
+                fig.add_trace(go.Scatter(x=div_x, y=div_y, mode='lines', line=dict(color='white', width=1.5), hoverinfo='skip', showlegend=False))
             
             for (wx1, wy1, wx2, wy2, dx, dy) in windows:
                 proj_poly = Polygon([(wx1, wy1), (wx2, wy2), (wx2 + dx * b_ns_dist, wy2 + dy * b_ns_dist), (wx1 + dx * b_ns_dist, wy1 + dy * b_ns_dist)])
                 px, py = proj_poly.exterior.xy
-                ax.plot(px, py, color='red', linewidth=1, linestyle=':', alpha=0.7)
-                ax.fill(px, py, color='red', alpha=0.1)
-                
-                ex = (wx1 + wx2) / 2 + dx * b_ns_dist
-                ey = (wy1 + wy2) / 2 + dy * b_ns_dist
-                
-                ax.text(ex, ey, f" {b_ns_dist:.1f}m", color='darkred', fontsize=8, fontweight='bold',
-                        ha='center' if abs(dx) < 0.1 else ('left' if dx > 0 else 'right'),
-                        va='center' if abs(dy) < 0.1 else ('bottom' if dy > 0 else 'top'))
-                
-                # 투영면 범위 포함
-                min_extent_x = min(min_extent_x, min(px))
-                max_extent_x = max(max_extent_x, max(px))
-                min_extent_y = min(min_extent_y, min(py))
-                max_extent_y = max(max_extent_y, max(py))
+                fig.add_trace(go.Scatter(x=list(px), y=list(py), fill='toself', fillcolor='rgba(255,0,0,0.1)', mode='lines', line=dict(color='rgba(255,0,0,0.7)', width=1, dash='dot'), hoverinfo='skip', showlegend=False))
 
-        ax.annotate('N', xy=(site_w + 30, site_l + 30), xytext=(site_w + 30, site_l + 10),
-                    arrowprops=dict(facecolor='black', shrink=0, width=3, headwidth=10),
-                    fontsize=16, fontweight='bold', ha='center', va='top')
-                    
-        import matplotlib.patches as mpatches
-        legend_patches = []
-        # Create a set of sizes actually placed
-        placed_sizes = set([b[7] for b in final_buildings])
-        for size in sorted(list(placed_sizes)):
-            legend_patches.append(mpatches.Patch(color=SIZE_COLORS.get(size, SIZE_COLORS.get(size.split('(')[0], '#cccccc')), label=size.replace('계단식', '').replace('()', '')))
-        if legend_patches:
-            ax.legend(handles=legend_patches, loc='lower left', bbox_to_anchor=(1.01, 0.0), title="평형 (전용면적)", title_fontsize='10', fontsize='9')
 
-        # 계산된 범위를 바탕으로 여유를 두고 화면 설정
-        ax.set_xlim(min(-10, min_extent_x - 15), max(site_w + 10, max_extent_x + 15))
-        ax.set_ylim(min(-10, min_extent_y - 15), max(site_l + 10, max_extent_y + 15))
-        ax.set_aspect('equal')
-        ax.set_xlabel("Width (m)")
-        ax.set_ylabel("Length (m)")
-        
-        st.pyplot(fig)
+
+
+        plot_min_x, plot_max_x = -30, site_w + 30
+        plot_min_y, plot_max_y = -30, site_l + 30
+        if school_w: plot_min_x = min(plot_min_x, minx - off_w - 100)
+        if school_e: plot_max_x = max(plot_max_x, maxx + off_e + 100)
+        if school_s: plot_min_y = min(plot_min_y, miny - off_s - 100)
+        if school_n: plot_max_y = max(plot_max_y, maxy + off_n + 100)
+
+        fig.update_layout(
+            xaxis=dict(scaleanchor="y", scaleratio=1, visible=False, range=[plot_min_x, plot_max_x]),
+            yaxis=dict(visible=False, range=[plot_min_y, plot_max_y]),
+            plot_bgcolor='white',
+            paper_bgcolor='white',
+            margin=dict(l=0, r=0, t=0, b=0),
+            legend=dict(yanchor="bottom", y=0.0, xanchor="left", x=1.01, title="평형 (전용면적)", bgcolor='rgba(255,255,255,0.8)', bordercolor='black', borderwidth=1),
+            hovermode='closest',
+            height=850
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
