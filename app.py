@@ -243,7 +243,7 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
                     # 0. 학교 일조권 보호 (그림자 침범 검사) - 최적화됨
                     if school_polys:
                         # bounding box of candidate
-                        minx, miny, maxx, maxy = candidate.bounds
+                        cx_min, cy_min, cx_max, cy_max = candidate.bounds
                         for t_hr in [9.0, 12.0, 15.0]:
                             if conflict: break
                             az_deg = 180 + (t_hr - 12) * 15
@@ -253,10 +253,10 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
                             sdy = math.cos(math.radians(az_deg - 180)) * s_len
                             
                             # Fast AABB check
-                            s_minx = min(minx, minx + sdx)
-                            s_maxx = max(maxx, maxx + sdx)
-                            s_miny = min(miny, miny + sdy)
-                            s_maxy = max(maxy, maxy + sdy)
+                            s_minx = min(cx_min, cx_min + sdx)
+                            s_maxx = max(cx_max, cx_max + sdx)
+                            s_miny = min(cy_min, cy_min + sdy)
+                            s_maxy = max(cy_max, cy_max + sdy)
                             
                             for spoly in school_polys:
                                 sp_minx, sp_miny, sp_maxx, sp_maxy = spoly.bounds
