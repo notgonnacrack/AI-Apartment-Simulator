@@ -60,11 +60,8 @@ def get_base_windows(b_w, b_l, bldg_shape, units):
         for i in range(units):
             windows.append((i * step, 0, (i + 1) * step, 0, 0, -1))
     elif bldg_shape in ["타워형", "L자형"]:
-        t = b_w / 3.0
-        windows.append((t, 0, 2*t, 0, 0, -1))
-        windows.append((2*t, 0, 3*t, 0, 0, -1))
-        windows.append((0, 0, 0, t, -1, 0))
-        windows.append((0, t, 0, 2*t, -1, 0))
+        windows.append((0, 0, b_w, 0, 0, -1))
+        windows.append((0, 0, 0, b_l, -1, 0))
     return windows
 
 def get_base_dividers(b_w, b_l, bldg_shape, units):
