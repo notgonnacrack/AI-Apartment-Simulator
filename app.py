@@ -186,6 +186,17 @@ def is_valid_orientation(windows):
 # - 같은 평형의 판상형(계단식) 모듈과 탑상형(L자) 모듈을 그대로 재사용해서
 #   세대당 바닥면적이 기존 타입과 동일하게 유지되도록 조립합니다.
 # ==========================================================
+
+# 1. 모든 평형에 대해 '타워형(L자형)' 뼈대가 없으면 자동 생성 (그래야 복합동을 만들 수 있음)
+for key in list(UNIT_TYPES.keys()):
+    if "(계단식)" in key or "(복도식)" in key:
+        size_label = key.split("(")[0]
+        area = float(size_label.replace("m²", ""))
+        tower_key1 = f"{size_label}(탑상형)"
+        tower_key2 = f"{size_label}(타워형)"
+        if tower_key1 not in UNIT_TYPES and tower_key2 not in UNIT_TYPES:
+            UNIT_TYPES[tower_key1] = (*tower_dims(area), 3, area, "L자형")
+
 COMPOSITE_GEOM = {}  # name -> (poly, windows, dividers)
 
 def build_composite_types(unit_types, composite_geom):
