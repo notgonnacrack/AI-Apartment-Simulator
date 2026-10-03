@@ -80,36 +80,34 @@ UNIT_TYPES = {
     "114m²(타워형)": (*tower_dims(114), 3, 114.0, "L자형"),
 }
 
-SIZE_COLORS = {
-    "84m²(탑상형)": "#3cb371",
-    "84m²": "#6495ed",
-    "114m²": "#ff69b4",
-    "59m²": "#00ced1",
-    "74m²": "#ff7f50",
-    "65m²": "#dda0dd",
-    "55m²": "#ffd700",
-    "46m²": "#4682b4",
-    "41m²": "#ff69b4",
-    "36m²": "#cd5c5c",
-    "31m²": "#8fbc8f",
-    "26m²": "#9370db",
-    # 복합 동 타입 (탑상 4호 / 판탑 혼합동)
-    "84m²(탑상4호)": "#2e8b57",
-    "84m²(판탑2+2)": "#f4a460",
-    "84m²(판탑2+3)": "#d2691e",
-    "114m²(탑상4호)": "#556b2f",
-    "114m²(판탑2+2)": "#bc8f8f",
-    "114m²(판탑2+3)": "#a0522d",
-}
+import colorsys
 
 def get_type_color(name):
-    if name in SIZE_COLORS:
-        return SIZE_COLORS[name]
-    # 기타 평형 등으로 자동 생성된 복합 타입의 기본 색상
-    if "탑상4호" in name: return "#2e8b57"
-    if "판탑2+2" in name: return "#f4a460"
-    if "판탑2+3" in name: return "#d2691e"
-    return SIZE_COLORS.get(name.split('(')[0], '#cccccc')
+    size = name.split('(')[0]
+    hue_map = {
+        "26m²": 0.75, "31m²": 0.80, "36m²": 0.00,
+        "41m²": 0.05, "46m²": 0.10, "55m²": 0.15,
+        "59m²": 0.50, "65m²": 0.55, "74m²": 0.08,
+        "84m²": 0.60, "114m²": 0.90,
+    }
+    
+    h = hue_map.get(size, (hash(size) % 100) / 100.0)
+    
+    if "계단식" in name or "복도식" in name or "판상" in name:
+        l, s = 0.65, 0.7
+    elif "탑상형" in name or "타워형" in name or "L자형" in name:
+        l, s = 0.50, 0.85
+    elif "탑상4호" in name:
+        l, s = 0.40, 0.90
+    elif "판탑2+2" in name:
+        l, s = 0.55, 0.45
+    elif "판탑2+3" in name:
+        l, s = 0.45, 0.45
+    else:
+        l, s = 0.5, 0.7
+        
+    r, g, b = colorsys.hls_to_rgb(h, l, s)
+    return f"#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}"
 
 def get_base_windows(b_w, b_l, bldg_shape, units):
     windows = []
