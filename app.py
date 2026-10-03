@@ -53,8 +53,24 @@ SIZE_COLORS = {
     "41m²": "#ff69b4",
     "36m²": "#cd5c5c",
     "31m²": "#8fbc8f",
-    "26m²": "#9370db"
+    "26m²": "#9370db",
+    # 복합 동 타입 (탑상 4호 / 판탑 혼합동)
+    "84m²(탑상4호)": "#2e8b57",
+    "84m²(판탑2+2)": "#f4a460",
+    "84m²(판탑2+3)": "#d2691e",
+    "114m²(탑상4호)": "#556b2f",
+    "114m²(판탑2+2)": "#bc8f8f",
+    "114m²(판탑2+3)": "#a0522d",
 }
+
+def get_type_color(name):
+    if name in SIZE_COLORS:
+        return SIZE_COLORS[name]
+    # 기타 평형 등으로 자동 생성된 복합 타입의 기본 색상
+    if "탑상4호" in name: return "#2e8b57"
+    if "판탑2+2" in name: return "#f4a460"
+    if "판탑2+3" in name: return "#d2691e"
+    return SIZE_COLORS.get(name.split('(')[0], '#cccccc')
 
 def get_base_windows(b_w, b_l, bldg_shape, units):
     windows = []
@@ -126,8 +142,86 @@ def is_valid_orientation(windows):
             return False
     return True
 
+# ==========================================================
+# 복합 동 타입 자동 생성 (탑상 4호 / 판탑 혼합동)
+# - 같은 평형의 판상형(계단식) 모듈과 탑상형(L자) 모듈을 그대로 재사용해서
+#   세대당 바닥면적이 기존 타입과 동일하게 유지되도록 조립합니다.
+# ==========================================================
+COMPOSITE_GEOM = {}  # name -> (poly, windows, dividers)
+
+def build_composite_types(unit_types, composite_geom):
+    by_size = {}
+    for name, spec in list(unit_types.items()):
+        size_label = name.split("(")[0]
+        shape = spec[4]
+        if shape == "판상형" and spec[2] == 2:
+            by_size.setdefault(size_label, {})['plate'] = spec
+        elif shape == "L자형":
+            by_size.setdefault(size_label, {})['tower'] = spec
+
+    for size_label, d in by_size.items():
+        if 'plate' not in d or 'tower' not in d:
+            continue
+        p_w, p_l, p_units, area, _ = d['plate']
+        t_w, t_l, t_units, _, _ = d['tower']
+
+        pw = p_w / p_units          # 판상 1세대 전면폭
+        pd = p_l                    # 판상 동 깊이
+        t = t_w / 3.0               # 탑상 날개 두께
+        t_area = create_building_poly(t_w, t_l, "L자형").area
+        u_t = (t_area / t_units) / t  # 탑상 1세대가 날개 방향으로 차지하는 길이
+
+        # 1) 탑상 4호 : ㄱ자 양 날개 2세대 + 2세대 (세대당 면적은 탑상 3호와 동일)
+        W = 2 * u_t + t / 2.0
+        poly4 = Polygon([(0, 0), (W, 0), (W, t), (t, t), (t, W), (0, W)])
+        win4 = [(0, 0, W, 0, 0, -1), (0, 0, 0, W, -1, 0)]
+        ym = t + (W - t) / 2.0
+        div4 = [((W / 2.0, 0), (W / 2.0, t)), ((0, t), (t, t)), ((0, ym), (t, ym))]
+        n4 = f"{size_label}(탑상4호)"
+        unit_types[n4] = (W, W, 4, area, "탑상4호")
+        composite_geom[n4] = (poly4, win4, div4)
+
+        # 2) 판탑 혼합동 : 판상 2세대(남측 날개) + 탑상 2~3세대(꺾인 날개)
+        for n_tower in (2, 3):
+            LA = 2 * pw
+            LB = pd + n_tower * u_t
+            poly_m = Polygon([(0, 0), (LA, 0), (LA, pd), (t, pd), (t, LB), (0, LB)])
+            win_m = [(0, 0, pw, 0, 0, -1), (pw, 0, LA, 0, 0, -1), (0, pd, 0, LB, -1, 0)]
+            div_m = [((pw, 0), (pw, pd)), ((0, pd), (t, pd))]
+            for k in range(1, n_tower):
+                yk = pd + k * u_t
+                div_m.append(((0, yk), (t, yk)))
+            nm = f"{size_label}(판탑2+{n_tower})"
+            unit_types[nm] = (LA, LB, 2 + n_tower, area, "판탑형")
+            composite_geom[nm] = (poly_m, win_m, div_m)
+
+build_composite_types(UNIT_TYPES, COMPOSITE_GEOM)
+
+def get_type_group(name, shape, units):
+    if shape == "판상형": return "판상"
+    if shape == "L자형": return "탑상3"
+    if shape == "탑상4호": return "탑상4"
+    if shape == "판탑형": return f"판탑{units}"
+    return "기타"
+
+def get_far_multiplier(shape, exclude_balcony):
+    if not exclude_balcony:
+        return 1.0
+    if shape == '판상형': return 0.70
+    if shape == '판탑형': return 0.775  # 판상 + 탑상 혼합
+    return 0.85
+
+ALL_GROUPS = ("판상", "탑상3", "탑상4", "판탑4", "판탑5")
+# AI 자동 모드에서 비교하는 조합들
+AUTO_COMBOS = {
+    "판상형만": ("판상",),
+    "탑상형 (3호·4호)": ("탑상3", "탑상4"),
+    "판탑 혼합동 + 판상형": ("판상", "판탑4", "판탑5"),
+    "전체 혼합 (판상+탑상+판탑)": ALL_GROUPS,
+}
+
 @st.cache_data(show_spinner=False)
-def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=0, trap_top=0, trap_height=0, l_w=0, l_l=0, l_w_inner=0, l_l_inner=0, exclude_balcony=False, layout_version=18, flip_h=False, flip_v=False, plate_only=False, tower_only=False):
+def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=0, trap_top=0, trap_height=0, l_w=0, l_l=0, l_w_inner=0, l_l_inner=0, exclude_balcony=False, layout_version=19, flip_h=False, flip_v=False, plate_only=False, tower_only=False, allowed_groups=None):
     
     if site_shape_type == "직사각형":
         base_site_poly = Polygon([(0,0), (site_w,0), (site_w,site_l), (0,site_l)])
@@ -172,19 +266,26 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
     buildings = []
     types_info = []
     
-    selected_keys = [k for k in UNIT_TYPES.keys() if any(size in k for size in selected_sizes)]
-    if plate_only:
-        selected_keys = [k for k in selected_keys if UNIT_TYPES[k][4] == "판상형"]
-    if tower_only:
-        selected_keys = [k for k in selected_keys if UNIT_TYPES[k][4] == "L자형"]
+    selected_keys = [k for k in UNIT_TYPES.keys() if k.split("(")[0] in selected_sizes]
+    if allowed_groups is None:
+        if plate_only:
+            allowed_groups = ("판상",)
+        elif tower_only:
+            allowed_groups = ("탑상3", "탑상4")
+        else:
+            allowed_groups = ALL_GROUPS
+    selected_keys = [k for k in selected_keys if get_type_group(k, UNIT_TYPES[k][4], UNIT_TYPES[k][2]) in allowed_groups]
     for name in selected_keys:
         size_label = name.split("(")[0]
         if size_ratios.get(size_label, 0) <= 0:
             continue
         w, l, units, area, shape = UNIT_TYPES[name]
-        poly = create_building_poly(w, l, shape)
-        windows = get_base_windows(w, l, shape, units)
-        dividers = get_base_dividers(w, l, shape, units)
+        if name in COMPOSITE_GEOM:
+            poly, windows, dividers = COMPOSITE_GEOM[name]
+        else:
+            poly = create_building_poly(w, l, shape)
+            windows = get_base_windows(w, l, shape, units)
+            dividers = get_base_dividers(w, l, shape, units)
         types_info.append({
             'name': name, 'size_label': size_label, 'poly': poly, 'units': units, 'shape': shape,
             'area': poly.area, 'windows': windows, 'dividers': dividers
@@ -231,7 +332,7 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
                 b_h = b_floors * 3.0
                 b_ns_dist = max(min_ns_dist, b_h * h_multiplier)
                 
-                far_multiplier = (0.70 if t_info['shape'] == '판상형' else 0.85) if exclude_balcony else 1.0
+                far_multiplier = get_far_multiplier(t_info['shape'], exclude_balcony)
                 new_far = ((total_floor_area + (t_info['area'] * far_multiplier) * b_floors) / site_area) * 100
                 new_bcr = ((bldg_area + t_info['area']) / site_area) * 100
                 
@@ -450,11 +551,18 @@ with col_input:
     
     st.header("2. 평형 선택 (전용면적 기준)")
     st.caption("배치에 사용할 평형을 모두 선택해주세요")
+    STYLE_OPTIONS = {
+        "🤖 AI 자동 (세대수 최대 조합)": None,
+        "판상형만": ("판상",),
+        "탑상형만 (3호·4호)": ("탑상3", "탑상4"),
+        "판탑 혼합동만": ("판탑4", "판탑5"),
+    }
     layout_style = st.radio("배치 스타일 최적화 (건물 형태)", 
-                           ["자동 혼합", "판상형만 배치", "타워형만 배치"], 
-                           horizontal=True)
-    plate_only = "판상형" in layout_style
-    tower_only = "타워형" in layout_style
+                           list(STYLE_OPTIONS.keys()), 
+                           horizontal=True,
+                           help="AI 자동: 판상형 / 탑상형(3호·4호) / 판탑 혼합동 / 전체 혼합 4가지 조합을 모두 돌려보고 세대수가 가장 많은 조합을 채택합니다.\n\n※ 판탑 혼합동·탑상 4호는 판상형과 탑상형이 모두 있는 평형(84m², 114m², 기타 평형)에서만 생성됩니다.")
+    style_groups = STYLE_OPTIONS[layout_style]
+    is_auto_style = style_groups is None
     
     st.write("초소형(복도식)")
     c1, c2, c3, c4, c5 = st.columns(5)
@@ -488,6 +596,9 @@ with col_input:
         t_footprint = 2.85 * c_area * 3
         t_b_w = round(math.sqrt(t_footprint * 9 / 5.0), 1)
         UNIT_TYPES[f"{c_area}m²(타워형)"] = (t_b_w, t_b_w, 3, float(c_area), "L자형")
+        
+        # 3. 탑상 4호 / 판탑 혼합동도 자동 생성
+        build_composite_types(UNIT_TYPES, COMPOSITE_GEOM)
 
     selected_sizes = []
     if use_26: selected_sizes.append("26m²")
@@ -555,34 +666,34 @@ with col_viz:
     
     if calc_btn:
         st.session_state['last_inputs'] = inputs_tuple
-        with st.spinner("AI가 최적의 배치를 찾고 있습니다... (약 10~20초 소요)"):
-            bldgs, s_area, b_area, base_site_poly = auto_optimize_layout(
-                site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=trap_bottom, trap_top=trap_top, trap_height=trap_height, l_w=l_w, l_l=l_l, l_w_inner=l_w_inner, l_l_inner=l_l_inner, exclude_balcony=exclude_balcony, layout_version=18, flip_h=flip_h, plate_only=plate_only, tower_only=tower_only)
+        with st.spinner("AI가 여러 동 조합(판상/탑상/판탑)을 비교하며 최적 배치를 찾고 있습니다... (약 20~40초 소요)"):
+            def run_layout(groups):
+                return auto_optimize_layout(
+                    site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=trap_bottom, trap_top=trap_top, trap_height=trap_height, l_w=l_w, l_l=l_l, l_w_inner=l_w_inner, l_l_inner=l_l_inner, exclude_balcony=exclude_balcony, layout_version=19, flip_h=flip_h, flip_v=flip_v, allowed_groups=tuple(groups))
             
-            hint_msg = ""
-            # 백그라운드 수익성 분석 (모든 배치 스타일 테스트)
-            alternatives = {}
-            if "자동 혼합" not in layout_style:
-                bldgs_m, _, _, _ = auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=trap_bottom, trap_top=trap_top, trap_height=trap_height, l_w=l_w, l_l=l_l, l_w_inner=l_w_inner, l_l_inner=l_l_inner, exclude_balcony=exclude_balcony, layout_version=18, flip_h=flip_h, flip_v=flip_v, plate_only=False, tower_only=False)
-                alternatives["자동 혼합"] = sum([b[5] * b[4] for b in bldgs_m])
-            if not plate_only:
-                bldgs_p, _, _, _ = auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=trap_bottom, trap_top=trap_top, trap_height=trap_height, l_w=l_w, l_l=l_l, l_w_inner=l_w_inner, l_l_inner=l_l_inner, exclude_balcony=exclude_balcony, layout_version=18, flip_h=flip_h, flip_v=flip_v, plate_only=True, tower_only=False)
-                alternatives["판상형만 배치"] = sum([b[5] * b[4] for b in bldgs_p])
-            if not tower_only:
-                bldgs_t, _, _, _ = auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=trap_bottom, trap_top=trap_top, trap_height=trap_height, l_w=l_w, l_l=l_l, l_w_inner=l_w_inner, l_l_inner=l_l_inner, exclude_balcony=exclude_balcony, layout_version=18, flip_h=flip_h, flip_v=flip_v, plate_only=False, tower_only=True)
-                alternatives["타워형만 배치"] = sum([b[5] * b[4] for b in bldgs_t])
-                
-            current_units = sum([b[5] * b[4] for b in bldgs])
+            def count_units(blds):
+                return sum([b[5] * b[4] for b in blds])
             
-            if alternatives:
-                best_style = max(alternatives, key=alternatives.get)
-                best_units = alternatives[best_style]
-                
+            # 백그라운드 수익성 분석: 모든 조합을 돌려서 세대수 비교
+            combo_results = {}
+            for combo_name, groups in AUTO_COMBOS.items():
+                combo_results[combo_name] = run_layout(groups)
+            alternatives = {k: count_units(v[0]) for k, v in combo_results.items()}
+            best_style = max(alternatives, key=alternatives.get)
+            best_units = alternatives[best_style]
+            compare_txt = " · ".join([f"{k} {v:,}세대" for k, v in sorted(alternatives.items(), key=lambda x: -x[1])])
+            
+            if is_auto_style:
+                bldgs, s_area, b_area, base_site_poly = combo_results[best_style]
+                hint_msg = f"🤖 **AI 자동 조합 결과:** {len(alternatives)}가지 동 조합을 비교한 결과 **'{best_style}'** 조합이 **{best_units:,}세대**로 가장 많아 채택했습니다.\n\n📊 비교: {compare_txt}"
+            else:
+                bldgs, s_area, b_area, base_site_poly = run_layout(style_groups)
+                current_units = count_units(bldgs)
                 if best_units > current_units:
                     diff = best_units - current_units
-                    hint_msg = f"💡 **수익성 분석:** '{best_style}' 옵션으로 변경하시면 최대 **{best_units:,}세대 (+{diff:,}세대)**까지 더 뽑아낼 수 있습니다!"
+                    hint_msg = f"💡 **수익성 분석:** '{best_style}' 조합으로 바꾸면 최대 **{best_units:,}세대 (+{diff:,}세대)**까지 뽑을 수 있습니다! ('🤖 AI 자동'을 선택하면 자동 적용됩니다)\n\n📊 비교: {compare_txt}"
                 else:
-                    hint_msg = f"💡 **수익성 분석:** 완벽합니다! 현재 선택하신 배치가 이 대지에서 뽑아낼 수 있는 **최대 세대수({current_units:,}세대)**입니다!"
+                    hint_msg = f"💡 **수익성 분석:** 완벽합니다! 현재 선택하신 배치가 이 대지에서 뽑아낼 수 있는 **최대 세대수({current_units:,}세대)**입니다!\n\n📊 비교: {compare_txt}"
                     
             st.session_state['sim_result'] = (bldgs, s_area, b_area, base_site_poly)
             st.session_state['hint_msg'] = hint_msg
@@ -652,7 +763,7 @@ with col_viz:
             
         final_buildings.append((poly, shape, windows, dividers, b_floors, units, ns_dist, name))
         
-        far_multiplier = (0.70 if shape == '판상형' else 0.85) if exclude_balcony else 1.0
+        far_multiplier = get_far_multiplier(shape, exclude_balcony)
         total_floor_area += (poly.area * far_multiplier) * b_floors
         total_units += units * b_floors
         actual_bldg_area += poly.area
@@ -669,7 +780,11 @@ with col_viz:
         metrics_col4.metric("용적률 (FAR)", f"{far:.2f} %")
         
         if st.session_state.get('hint_msg'):
-            st.warning(st.session_state['hint_msg'].replace('💡 ', ''), icon='💡')
+            _hint = st.session_state['hint_msg']
+            if _hint.startswith('🤖'):
+                st.success(_hint.replace('🤖 ', '', 1), icon='🤖')
+            else:
+                st.warning(_hint.replace('💡 ', ''), icon='💡')
         
         azimuth_deg = 180 + (time_of_day - 12) * 15
         altitude_deg = 29.0 - abs(time_of_day - 12) * 4.0
@@ -740,15 +855,15 @@ with col_viz:
 
         placed_sizes = set([b[7] for b in final_buildings])
         for size in sorted(list(placed_sizes)):
-            color = SIZE_COLORS.get(size, SIZE_COLORS.get(size.split('(')[0], '#cccccc'))
+            color = get_type_color(size)
             fig.add_trace(go.Scatter(x=[None], y=[None], mode='markers', marker=dict(color=color, size=15, symbol='square'), name=size.replace('계단식', '').replace('()', ''), showlegend=True))
 
         for idx, b in enumerate(final_buildings):
             poly, bldg_shape, windows, dividers, b_floors, b_units, b_ns_dist, name = b
             x, y = poly.exterior.xy
-            color = SIZE_COLORS.get(name, SIZE_COLORS.get(name.split('(')[0], '#cccccc'))
+            color = get_type_color(name)
             
-            hover_text = f"동: {idx+1}동<br>타입: {name}<br>층수: {b_floors}F<br>세대수: {b_units}세대<br>인동간격: {b_ns_dist:.1f}m"
+            hover_text = f"동: {idx+1}동<br>타입: {name}<br>층수: {b_floors}F<br>층당 세대수: {b_units}세대 (동 전체 {b_units * b_floors}세대)<br>인동간격: {b_ns_dist:.1f}m"
             fig.add_trace(go.Scatter(x=list(x), y=list(y), fill='toself', fillcolor=color, mode='lines', line=dict(color='#333333', width=1), text=hover_text, hoverinfo='text', showlegend=False))
             
             div_x, div_y = [], []
