@@ -350,7 +350,8 @@ st.set_page_config(layout="wide", page_title="속 터져서 내가 직접 만들
 import os
 @st.dialog("📖 AI 아파트 가배치 시뮬레이터 사용 메뉴얼", width="large")
 def show_manual():
-    manual_path = "app_manual.md"
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    manual_path = os.path.join(current_dir, "app_manual.md")
     if os.path.exists(manual_path):
         with open(manual_path, "r", encoding="utf-8") as f:
             st.markdown(f.read())
