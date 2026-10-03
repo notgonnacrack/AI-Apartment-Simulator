@@ -380,22 +380,22 @@ with col_input:
     
     if site_shape_type == "직사각형":
         st.caption("※ 선택한 형상에 맞게 가로/세로 길이로 다각형 대지가 생성됩니다.")
-        site_w = st.number_input("대지 가로 길이 (m)", min_value=30, max_value=2000, value=200, step=10)
-        site_l = st.number_input("대지 세로 길이 (m)", min_value=30, max_value=2000, value=200, step=10)
+        site_w = st.number_input("대지 가로 길이 (m)", min_value=30, max_value=400, value=200, step=10)
+        site_l = st.number_input("대지 세로 길이 (m)", min_value=30, max_value=400, value=200, step=10)
     elif site_shape_type == "사다리꼴":
         st.caption("※ 사다리꼴의 치수를 상세 입력합니다.")
-        trap_bottom = st.number_input("아랫변 길이 (긴변, m)", min_value=30, max_value=2000, value=250, step=10)
-        trap_top = st.number_input("윗변 길이 (짧은변, m)", min_value=10, max_value=2000, value=150, step=10)
-        trap_height = st.number_input("높이 (m)", min_value=30, max_value=2000, value=200, step=10)
+        trap_bottom = st.number_input("아랫변 길이 (긴변, m)", min_value=30, max_value=400, value=250, step=10)
+        trap_top = st.number_input("윗변 길이 (짧은변, m)", min_value=10, max_value=400, value=150, step=10)
+        trap_height = st.number_input("높이 (m)", min_value=30, max_value=400, value=200, step=10)
         site_w = max(trap_bottom, trap_top)
         site_l = trap_height
     elif site_shape_type == "L자형" or site_shape_type == "ㄱ자형":
         st.caption("※ 선택하신 대지의 치수를 상세 입력합니다.")
         col_w1, col_w2 = st.columns(2)
-        l_w = col_w1.number_input("가로 전체 길이 (m)", min_value=30, max_value=2000, value=250, step=10)
+        l_w = col_w1.number_input("가로 전체 길이 (m)", min_value=30, max_value=400, value=250, step=10)
         l_w_inner = col_w2.number_input("파인 부분 가로 (m)", min_value=10, max_value=400, value=120, step=10)
         col_l1, col_l2 = st.columns(2)
-        l_l = col_l1.number_input("세로 전체 길이 (m)", min_value=30, max_value=2000, value=200, step=10)
+        l_l = col_l1.number_input("세로 전체 길이 (m)", min_value=30, max_value=400, value=200, step=10)
         l_l_inner = col_l2.number_input("파인 부분 세로 (m)", min_value=10, max_value=400, value=100, step=10)
 
     flip_h = False
