@@ -25,20 +25,59 @@ else:
     plt.rc('font', family='NanumGothic')
 plt.rcParams['axes.unicode_minus'] = False
 
+def get_solar_angle(t_hr):
+    # 동지(Winter Solstice) 서울(위도 37.5도) 기준 태양 궤도 계산
+    lat = math.radians(37.5)
+    dec = math.radians(-23.44)
+    h_angle = math.radians((t_hr - 12.0) * 15.0)
+    
+    sin_alt = math.sin(lat) * math.sin(dec) + math.cos(lat) * math.cos(dec) * math.cos(h_angle)
+    alt = math.asin(sin_alt)
+    
+    sin_az = -math.sin(h_angle) * math.cos(dec) / math.cos(alt)
+    cos_az = (math.sin(dec) - math.sin(lat) * math.sin(alt)) / (math.cos(lat) * math.cos(alt))
+    
+    az = math.atan2(sin_az, cos_az)
+    az_deg = math.degrees(az)
+    if az_deg < 0:
+        az_deg += 360.0
+        
+    return az_deg, math.degrees(alt)
+
+# ==========================================================
+# 동 평면 치수 산정 기준
+# - 동 외곽선(발코니 포함) 바닥면적 = 전용면적 × FOOTPRINT_FACTOR × 층당 세대수
+#   (공급면적[전용+주거공용] + 발코니 서비스면적 ≈ 전용 × 1.75, 판상·탑상 공통)
+# - 판상형은 평형별 동 깊이를 주고 폭을 역산, 탑상형은 L자 비율(32:18)을 유지
+# ==========================================================
+FOOTPRINT_FACTOR = 1.75
+TOWER_ASPECT = 18.0 / 32.0
+
+def plate_dims(excl, units, depth):
+    total = FOOTPRINT_FACTOR * excl * units
+    return (round(total / depth, 1), float(depth))
+
+def tower_dims(excl, units=3):
+    # L자(날개 두께 = 가로/3) 면적 = b_w^2 * k
+    total = FOOTPRINT_FACTOR * excl * units
+    k = 1.0 / 3.0 + (TOWER_ASPECT - 1.0 / 3.0) / 3.0
+    b_w = math.sqrt(total / k)
+    return (round(b_w, 1), round(b_w * TOWER_ASPECT, 1))
+
 UNIT_TYPES = {
-    "26m²(복도식)": (20.0, 12.0, 4, 26.0, "판상형"),
-    "31m²(복도식)": (24.0, 12.0, 4, 31.0, "판상형"),
-    "36m²(복도식)": (28.0, 12.0, 4, 36.0, "판상형"),
-    "41m²(복도식)": (32.0, 12.0, 4, 41.0, "판상형"),
-    "46m²(복도식)": (36.0, 12.0, 4, 46.0, "판상형"),
-    "55m²(계단식)": (22.0, 14.0, 2, 55.0, "판상형"),
-    "59m²(계단식)": (24.0, 14.0, 2, 59.0, "판상형"),
-    "65m²(계단식)": (26.0, 15.0, 2, 65.0, "판상형"),
-    "74m²(계단식)": (28.0, 15.5, 2, 74.0, "판상형"),
-    "84m²(계단식)": (30.0, 16.0, 2, 84.0, "판상형"),
-    "84m²(탑상형)": (32.0, 18.0, 3, 84.0, "L자형"),
-    "114m²(계단식)": (38.0, 17.0, 2, 114.0, "판상형"),
-    "114m²(타워형)": (33.0, 33.0, 3, 114.0, "L자형"),
+    "26m²(복도식)": (*plate_dims(26, 4, 10.0), 4, 26.0, "판상형"),
+    "31m²(복도식)": (*plate_dims(31, 4, 10.0), 4, 31.0, "판상형"),
+    "36m²(복도식)": (*plate_dims(36, 4, 10.0), 4, 36.0, "판상형"),
+    "41m²(복도식)": (*plate_dims(41, 4, 10.0), 4, 41.0, "판상형"),
+    "46m²(복도식)": (*plate_dims(46, 4, 10.0), 4, 46.0, "판상형"),
+    "55m²(계단식)": (*plate_dims(55, 2, 10.5), 2, 55.0, "판상형"),
+    "59m²(계단식)": (*plate_dims(59, 2, 11.0), 2, 59.0, "판상형"),
+    "65m²(계단식)": (*plate_dims(65, 2, 11.0), 2, 65.0, "판상형"),
+    "74m²(계단식)": (*plate_dims(74, 2, 11.5), 2, 74.0, "판상형"),
+    "84m²(계단식)": (*plate_dims(84, 2, 12.0), 2, 84.0, "판상형"),
+    "84m²(탑상형)": (*tower_dims(84), 3, 84.0, "L자형"),
+    "114m²(계단식)": (*plate_dims(114, 2, 13.0), 2, 114.0, "판상형"),
+    "114m²(타워형)": (*tower_dims(114), 3, 114.0, "L자형"),
 }
 
 SIZE_COLORS = {
@@ -204,12 +243,29 @@ def get_type_group(name, shape, units):
     if shape == "판탑형": return f"판탑{units}"
     return "기타"
 
-def get_far_multiplier(shape, exclude_balcony):
-    if not exclude_balcony:
-        return 1.0
-    if shape == '판상형': return 0.70
-    if shape == '판탑형': return 0.775  # 판상 + 탑상 혼합
-    return 0.85
+# ==========================================================
+# 면적 산정 (주택공급에 관한 규칙 / 건축법 시행령 제119조 기준)
+# - 공급면적 = 주거전용 + 주거공용(계단·EV·복도·벽체)  →  용적률 산정 연면적
+# - 계약면적 = 공급면적 + 기타공용(지하주차장·관리동 등, 용적률 제외)
+# - 서비스면적(발코니)은 바닥면적에서 제외되므로 용적률·공급면적에 들어가지 않음
+# eff = (계단식 전용률, 탑상형 전용률, 복도식 전용률)
+# ==========================================================
+DEFAULT_EFF = (0.76, 0.74, 0.72)
+
+def type_area_breakdown(name, eff=DEFAULT_EFF):
+    """층당 (전용면적 합, 공급면적 합) 반환"""
+    _, _, units, area, shape = UNIT_TYPES[name]
+    e_stair, e_tower, e_corr = eff
+    if shape == "판상형":
+        e = e_corr if "복도식" in name else e_stair
+        supply = area / e * units
+    elif shape in ("L자형", "탑상4호"):
+        supply = area / e_tower * units
+    elif shape == "판탑형":
+        supply = area / e_stair * 2 + area / e_tower * (units - 2)
+    else:
+        supply = area / e_stair * units
+    return area * units, supply
 
 ALL_GROUPS = ("판상", "탑상3", "탑상4", "판탑4", "판탑5")
 # AI 자동 모드에서 비교하는 조합들
@@ -221,7 +277,7 @@ AUTO_COMBOS = {
 }
 
 @st.cache_data(show_spinner=False)
-def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=0, trap_top=0, trap_height=0, l_w=0, l_l=0, l_w_inner=0, l_l_inner=0, exclude_balcony=False, layout_version=19, flip_h=False, flip_v=False, plate_only=False, tower_only=False, allowed_groups=None):
+def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=0, trap_top=0, trap_height=0, l_w=0, l_l=0, l_w_inner=0, l_l_inner=0, eff=DEFAULT_EFF, layout_version=20, flip_h=False, flip_v=False, plate_only=False, tower_only=False, allowed_groups=None):
     
     if site_shape_type == "직사각형":
         base_site_poly = Polygon([(0,0), (site_w,0), (site_w,site_l), (0,site_l)])
@@ -250,7 +306,26 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
     # 다각형의 안쪽으로 setback만큼 쪼그라든(Shrink) 실제 건축가능 영역 생성
     site_poly = base_site_poly.buffer(-setback_x)
     
-    # 바운딩 박스 기준으로 학교 및 북쪽 기준선 설정
+    # ---- 사선/채광 이격 판정용 '인접대지경계선' 영역 (실제 대지 경계 기준) ----
+    # 도로·공원 등이 있으면 공동주택은 그 '중심선'을 인접대지경계선으로 봄 (건축법 시행령 제86조 제6항)
+    # → 해당 방향으로 대지를 (빈 땅 너비 / 2) 만큼 밀어낸 영역까지 허용
+    from shapely.prepared import prep
+    _eps = 0.05
+    if sunlight_dir == "정북방향":
+        sun_region = unary_union([base_site_poly, translate(base_site_poly, yoff=road_n / 2.0)]).buffer(_eps)
+    else:
+        sun_region = unary_union([base_site_poly, translate(base_site_poly, yoff=-road_s / 2.0)]).buffer(_eps)
+    win_region = unary_union([
+        base_site_poly,
+        translate(base_site_poly, yoff=road_n / 2.0),
+        translate(base_site_poly, yoff=-road_s / 2.0),
+        translate(base_site_poly, xoff=road_e / 2.0),
+        translate(base_site_poly, xoff=-road_w / 2.0),
+    ]).buffer(_eps)
+    sun_region_p = prep(sun_region)
+    win_region_p = prep(win_region)
+    
+    # 바운딩 박스 기준으로 학교 위치 설정
     minx, miny, maxx, maxy = base_site_poly.bounds
     
     school_polys = []
@@ -286,9 +361,11 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
             poly = create_building_poly(w, l, shape)
             windows = get_base_windows(w, l, shape, units)
             dividers = get_base_dividers(w, l, shape, units)
+        _excl_floor, supply_floor = type_area_breakdown(name, eff)
         types_info.append({
             'name': name, 'size_label': size_label, 'poly': poly, 'units': units, 'shape': shape,
-            'area': poly.area, 'windows': windows, 'dividers': dividers
+            'area': poly.area, 'windows': windows, 'dividers': dividers,
+            'supply_floor': supply_floor  # 층당 공급면적 합 (용적률 산정용)
         })
     
     points = []
@@ -332,8 +409,8 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
                 b_h = b_floors * 3.0
                 b_ns_dist = max(min_ns_dist, b_h * h_multiplier)
                 
-                far_multiplier = get_far_multiplier(t_info['shape'], exclude_balcony)
-                new_far = ((total_floor_area + (t_info['area'] * far_multiplier) * b_floors) / site_area) * 100
+                # 용적률: 지상 연면적 = 세대 공급면적(전용+주거공용) 합계 / 건폐율: 동 외곽 바닥면적(건축면적)
+                new_far = ((total_floor_area + t_info['supply_floor'] * b_floors) / site_area) * 100
                 new_bcr = ((bldg_area + t_info['area']) / site_area) * 100
                 
                 if new_bcr > max_bcr:
@@ -362,8 +439,7 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
                         cx_min, cy_min, cx_max, cy_max = candidate.bounds
                         for t_hr in [9.0, 12.0, 15.0]:
                             if conflict: break
-                            az_deg = 180 + (t_hr - 12) * 15
-                            alt_deg = 29.0 - abs(t_hr - 12) * 4.0
+                            az_deg, alt_deg = get_solar_angle(t_hr)
                             s_len = b_h / math.tan(math.radians(alt_deg))
                             sdx = math.sin(math.radians(az_deg - 180)) * s_len
                             sdy = math.cos(math.radians(az_deg - 180)) * s_len
@@ -386,38 +462,34 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
                                     conflict = True
                                     break
                                 
-                    # 0-1. 일조권 사선제한 (H/2)
+                    # 0-1. 일조 사선제한 (건축법 시행령 제86조 제1항: 높이 10m 초과 부분은 높이의 1/2 이상)
+                    #      건물을 H/2 만큼 정북(정남 기준이면 정남)으로 밀어도 인접대지경계선 안에 있어야 함
+                    #      → 사다리꼴 빗변, L자 파인 부분 등 실제 경계 전체에 대해 판정
                     if not conflict:
-                        bldg_min_x, bldg_min_y, bldg_max_x, bldg_max_y = candidate.bounds
-                        if sunlight_dir == "정북방향":
-                            if (maxy - bldg_max_y) < (b_h / 2.0) - road_n:
-                                conflict = True
-                        else:  # 정남방향
-                            if (bldg_min_y - miny) < (b_h / 2.0) - road_s:
-                                conflict = True
+                        sun_dy = (b_h / 2.0) if sunlight_dir == "정북방향" else -(b_h / 2.0)
+                        if not sun_region_p.contains(translate(candidate, yoff=sun_dy)):
+                            conflict = True
                             
-                    # 0-2. 채광창 방향 대지경계선 이격 (0.5H) (도로 너비만큼 완화)
+                    # 0-2. 채광창 방향 이격 (시행령 제86조 제3항 제1호: 창이 있는 벽면에서 '직각 방향'으로 0.5H 이상)
                     if not conflict:
                         window_setback = b_h * 0.5
                         for (wx1, wy1, wx2, wy2, dx, dy) in final_windows:
-                            min_wy, max_wy = min(wy1, wy2), max(wy1, wy2)
-                            min_wx, max_wx = min(wx1, wx2), max(wx1, wx2)
-                            if dy > 0.1:  # 북향
-                                if (maxy - max_wy) < window_setback - road_n: conflict = True
-                            if dy < -0.1: # 남향
-                                if (min_wy - miny) < window_setback - road_s: conflict = True
-                            if dx > 0.1:  # 동향
-                                if (maxx - max_wx) < window_setback - road_e: conflict = True
-                            if dx < -0.1: # 서향
-                                if (min_wx - minx) < window_setback - road_w: conflict = True
-                            if conflict: break
+                            win_proj = Polygon([(wx1, wy1), (wx2, wy2),
+                                                (wx2 + dx * window_setback, wy2 + dy * window_setback),
+                                                (wx1 + dx * window_setback, wy1 + dy * window_setback)])
+                            if not win_region_p.contains(win_proj):
+                                conflict = True
+                                break
 
                     if conflict: continue
                     
                     c_minx, c_miny, c_maxx, c_maxy = candidate.bounds
                     for existing_bldg, _, ex_windows, _, ex_floors, _, ex_ns_dist, _ in buildings:
                         e_minx, e_miny, e_maxx, e_maxy = existing_bldg.bounds
-                        max_possible_dist = max(b_ns_dist, ex_ns_dist) + 5.0
+                        ex_h = ex_floors * 3.0
+                        req_ns_dist = max(min_ns_dist, max(b_h, ex_h) * h_multiplier)
+                        max_possible_dist = req_ns_dist + 5.0
+                        
                         if c_maxx < e_minx - max_possible_dist or c_minx > e_maxx + max_possible_dist or c_maxy < e_miny - max_possible_dist or c_miny > e_maxy + max_possible_dist:
                             continue
                         if candidate.intersects(existing_bldg.buffer(side_dist, resolution=2)):
@@ -425,14 +497,14 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
                             break
                         
                         for (wx1, wy1, wx2, wy2, dx, dy) in final_windows:
-                            proj_poly = Polygon([(wx1, wy1), (wx2, wy2), (wx2 + dx * b_ns_dist, wy2 + dy * b_ns_dist), (wx1 + dx * b_ns_dist, wy1 + dy * b_ns_dist)])
+                            proj_poly = Polygon([(wx1, wy1), (wx2, wy2), (wx2 + dx * req_ns_dist, wy2 + dy * req_ns_dist), (wx1 + dx * req_ns_dist, wy1 + dy * req_ns_dist)])
                             if proj_poly.intersects(existing_bldg):
                                 conflict = True
                                 break
                         if conflict: break
                         
                         for (wx1, wy1, wx2, wy2, dx, dy) in ex_windows:
-                            proj_poly = Polygon([(wx1, wy1), (wx2, wy2), (wx2 + dx * ex_ns_dist, wy2 + dy * ex_ns_dist), (wx1 + dx * ex_ns_dist, wy1 + dy * ex_ns_dist)])
+                            proj_poly = Polygon([(wx1, wy1), (wx2, wy2), (wx2 + dx * req_ns_dist, wy2 + dy * req_ns_dist), (wx1 + dx * req_ns_dist, wy1 + dy * req_ns_dist)])
                             if proj_poly.intersects(candidate):
                                 conflict = True
                                 break
@@ -441,7 +513,7 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
                     if not conflict:
                         final_dividers = transform_dividers(t_info['dividers'], angle, x, y)
                         buildings.append((candidate, t_info['shape'], final_windows, final_dividers, b_floors, t_info['units'], b_ns_dist, t_info['name']))
-                        total_floor_area += (t_info['area'] * far_multiplier) * b_floors
+                        total_floor_area += t_info['supply_floor'] * b_floors
                         bldg_area += t_info['area']
                         added_units = t_info['units'] * b_floors
                         total_units += added_units
@@ -503,24 +575,30 @@ with col_input:
         col_l1, col_l2 = st.columns(2)
         l_l = col_l1.number_input("세로 전체 길이 (m)", min_value=30, max_value=500, value=200, step=10)
         l_l_inner = col_l2.number_input("파인 부분 세로 (m)", min_value=10, max_value=500, value=100, step=10)
+        # 예외 처리 (파인 부분이 전체보다 크지 않게)
+        l_w_inner = min(l_w_inner, l_w - 10)
+        l_l_inner = min(l_l_inner, l_l - 10)
+        site_w = l_w
+        site_l = l_l
 
     flip_h = False
     flip_v = False
-    if site_shape_type in ["L자형", "ㄷ자형", "사다리꼴"]:
+    if site_shape_type in ["L자형", "ㄱ자형", "사다리꼴"]:
         col_f1, col_f2 = st.columns(2)
         with col_f1:
             flip_h = st.checkbox("좌우 반전 (대칭)", value=False)
         with col_f2:
             flip_v = st.checkbox("상하 반전 (대칭)", value=False)
-
-        # 예외 처리
-        l_w_inner = min(l_w_inner, l_w - 10)
-        l_l_inner = min(l_l_inner, l_l - 10)
-        site_w = l_w
-        site_l = l_l
     max_far = st.number_input("용적률 상한 (%)", min_value=50, max_value=1000, value=300, step=10)
     max_bcr = st.number_input("건폐율 상한 (%)", min_value=10, max_value=100, value=20, step=2, help="💡 [수익성 팁] 법정 최대 건폐율(예: 60%)을 꽉 채우면 일조권 사선제한 때문에 오히려 층수가 깎입니다. 20~25% 수준으로 넉넉히 비워야 건물을 높게 올려 최대 세대수를 뽑을 수 있습니다.")
-    exclude_balcony = st.checkbox("서비스면적(발코니) 용적률 제외 보정", value=True, help="실제 아파트처럼 발코니 면적을 용적률 산정에서 제외하여 세대수를 극대화합니다.")
+    with st.expander("📐 면적 산정 기준 (전용률 · 기타공용)", expanded=False):
+        st.caption("용적률은 법령대로 **세대별 공급면적(전용 + 주거공용) 합계**로 산정합니다. 발코니(서비스면적)는 바닥면적에서 제외되므로 용적률에 들어가지 않습니다.")
+        c_e1, c_e2, c_e3 = st.columns(3)
+        eff_stair = c_e1.number_input("계단식 전용률 (%)", min_value=50, max_value=95, value=76, step=1, help="공급면적 대비 전용면적 비율. 84㎡ 기준 76% → 공급 약 110.5㎡")
+        eff_tower = c_e2.number_input("탑상형 전용률 (%)", min_value=50, max_value=95, value=74, step=1, help="코어·복도가 커서 계단식보다 약간 낮음. 84㎡ 기준 74% → 공급 약 113.5㎡")
+        eff_corr = c_e3.number_input("복도식 전용률 (%)", min_value=50, max_value=95, value=72, step=1, help="공용복도 때문에 가장 낮음")
+        other_common_pct = st.number_input("기타공용면적 (공급면적 대비 %)", min_value=0, max_value=150, value=50, step=5, help="지하주차장·관리동·커뮤니티 등. 계약면적 = 공급면적 + 기타공용. 용적률에는 들어가지 않으며 집계표 표시용입니다.")
+    eff = (eff_stair / 100.0, eff_tower / 100.0, eff_corr / 100.0)
     limit_floors = st.checkbox("층수 제한 있음", value=True)
     if limit_floors:
         floors = st.number_input("최고 층수 제한 (층)", min_value=1, max_value=100, value=35, step=1)
@@ -528,7 +606,7 @@ with col_input:
         floors = 50
         
     st.subheader("일조권 사선제한 방향")
-    sunlight_dir = st.radio("적용 기준 (건축법 제61조)", ["정북방향", "정남방향"], horizontal=True, index=1,
+    sunlight_dir = st.radio("적용 기준 (건축법 제61조)", ["정북방향", "정남방향"], horizontal=True, index=0,
                             help="일반적으로 정북방향이 적용되나, 택지개발지구/지구단위계획 등에서는 정남방향이 적용될 수 있습니다.")
         
     st.subheader("교육환경보호구역 (학교 연접 여부)")
@@ -656,10 +734,10 @@ with col_viz:
     st.info("💡 **교육환경보호 (일조권):** 학교 부지가 설정되면, 오전 9시~오후 3시 사이에 학교로 그림자를 드리우는 건물을 알아서 층수를 깎아(Step-down) 배치합니다.\n\n💡 **대지경계 사선제한:** 주변에 빈 땅(도로)이 있을 경우 그 너비만큼 일조권(H/2) 및 이격(0.5H) 제한을 완화받아 자동 배치됩니다.\n\n⚠️ **참고:** 도면에 그려지는 붉은색 투영 면적은 '건물 간 인동간격(0.8H)' 확인용입니다. 이 면적이 대지경계선 밖(도로 등)으로 튀어나가는 것은 합법입니다.")
     inputs_tuple = (
         layout_style, site_shape_type, trap_bottom, trap_top, trap_height, 
-        l_w, l_l, l_w_inner, l_l_inner, max_far, max_bcr, exclude_balcony, 
+        l_w, l_l, l_w_inner, l_l_inner, max_far, max_bcr,
         limit_floors, floors, sunlight_dir, school_n, school_s, school_e, school_w, 
         road_n, road_s, road_e, road_w, str(selected_sizes), str(size_ratios),
-        flip_h, flip_v
+        flip_h, flip_v, str(eff)
     )
 
     calc_btn = st.button("🚀 시뮬레이션 계산 시작", type="primary", use_container_width=True)
@@ -669,7 +747,7 @@ with col_viz:
         with st.spinner("AI가 여러 동 조합(판상/탑상/판탑)을 비교하며 최적 배치를 찾고 있습니다... (약 20~40초 소요)"):
             def run_layout(groups):
                 return auto_optimize_layout(
-                    site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=trap_bottom, trap_top=trap_top, trap_height=trap_height, l_w=l_w, l_l=l_l, l_w_inner=l_w_inner, l_l_inner=l_l_inner, exclude_balcony=exclude_balcony, layout_version=19, flip_h=flip_h, flip_v=flip_v, allowed_groups=tuple(groups))
+                    site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=trap_bottom, trap_top=trap_top, trap_height=trap_height, l_w=l_w, l_l=l_l, l_w_inner=l_w_inner, l_l_inner=l_l_inner, eff=eff, flip_h=flip_h, flip_v=flip_v, allowed_groups=tuple(groups))
             
             def count_units(blds):
                 return sum([b[5] * b[4] for b in blds])
@@ -750,6 +828,10 @@ with col_viz:
     total_units = 0
     actual_bldg_area = 0
     
+    # 면적 집계용
+    sum_exclusive = 0.0
+    sum_supply = 0.0
+    
     for i, b in enumerate(buildings):
         poly, shape, windows, dividers, b_floors, units, ns_dist, name = b
         row = edited_df.iloc[i]
@@ -763,10 +845,13 @@ with col_viz:
             
         final_buildings.append((poly, shape, windows, dividers, b_floors, units, ns_dist, name))
         
-        far_multiplier = get_far_multiplier(shape, exclude_balcony)
-        total_floor_area += (poly.area * far_multiplier) * b_floors
+        excl_floor, sup_floor = type_area_breakdown(name, eff=eff)
+        
+        total_floor_area += sup_floor * b_floors
         total_units += units * b_floors
         actual_bldg_area += poly.area
+        sum_exclusive += excl_floor * b_floors
+        sum_supply += sup_floor * b_floors
         
     bcr = (actual_bldg_area / site_area) * 100 if site_area > 0 else 0
     far = (total_floor_area / site_area) * 100 if site_area > 0 else 0
@@ -779,6 +864,19 @@ with col_viz:
         metrics_col3.metric("건폐율 (BCR)", f"{bcr:.2f} %")
         metrics_col4.metric("용적률 (FAR)", f"{far:.2f} %")
         
+        st.subheader("📊 면적 산정 결과")
+        sum_contract = sum_supply * (1 + other_common_pct / 100.0)
+        area_df = pd.DataFrame([
+            {"구분": "합계", 
+             "전용면적 (m²)": f"{sum_exclusive:,.1f}", 
+             "공급면적 (m²)": f"{sum_supply:,.1f}", 
+             "계약면적 (m²)": f"{sum_contract:,.1f}",
+             "기타공용 비율": f"{other_common_pct}%"}
+        ])
+        st.dataframe(area_df, hide_index=True, use_container_width=True)
+        st.caption("※ 용적률 산정용 연면적은 **공급면적(전용+주거공용)** 합계를 기준으로 계산되었습니다.")
+
+        
         if st.session_state.get('hint_msg'):
             _hint = st.session_state['hint_msg']
             if _hint.startswith('🤖'):
@@ -786,34 +884,12 @@ with col_viz:
             else:
                 st.warning(_hint.replace('💡 ', ''), icon='💡')
         
-        azimuth_deg = 180 + (time_of_day - 12) * 15
-        altitude_deg = 29.0 - abs(time_of_day - 12) * 4.0
+        azimuth_deg, altitude_deg = get_solar_angle(time_of_day)
         
         import plotly.graph_objects as go
         fig = go.Figure()
         
-        if site_shape_type == "직사각형":
-            base_site_poly = Polygon([(0,0), (site_w,0), (site_w,site_l), (0,site_l)])
-        elif site_shape_type == "L자형":
-            base_site_poly = Polygon([(0,0), (l_w,0), (l_w, l_l - l_l_inner), (l_w - l_w_inner, l_l - l_l_inner), (l_w - l_w_inner, l_l), (0, l_l)])
-        elif site_shape_type == "사다리꼴":
-            offset = (trap_bottom - trap_top) / 2
-            base_site_poly = Polygon([(0,0), (trap_bottom,0), (trap_bottom - offset, trap_height), (offset, trap_height)])
-        elif site_shape_type == "역L자형":
-            base_site_poly = Polygon([(0,0), (l_w - l_w_inner, 0), (l_w - l_w_inner, l_l_inner), (l_w, l_l_inner), (l_w, l_l), (0, l_l)])
-        else:
-            base_site_poly = Polygon([(0,0), (site_w,0), (site_w,site_l), (0,site_l)])
-            
-        if flip_h:
-            import shapely.affinity
-            base_site_poly = shapely.affinity.scale(base_site_poly, xfact=-1, origin='center')
-            minx, _, _, _ = base_site_poly.bounds
-            base_site_poly = shapely.affinity.translate(base_site_poly, xoff=-minx)
-        if flip_v:
-            import shapely.affinity
-            base_site_poly = shapely.affinity.scale(base_site_poly, yfact=-1, origin='center')
-            _, miny, _, _ = base_site_poly.bounds
-            base_site_poly = shapely.affinity.translate(base_site_poly, yoff=-miny)
+        # base_site_poly is already loaded from sim_result
             
         site_poly = base_site_poly.buffer(-setback_x)
 
