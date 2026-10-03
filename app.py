@@ -724,7 +724,7 @@ with col_input:
     - **최소 인동간격:** {min_ns_dist} m
     - **측벽 이격거리:** {side_dist} m (건축법 시행령)
     - **대지경계 이격:** {setback_x} m (대지안의 공지)
-    - **정북방향 사선제한:** 북쪽 경계로부터 H/2 이상 이격 (건축법)
+    - **{sunlight_dir} 사선제한:** {'북쪽' if sunlight_dir == '정북방향' else '남쪽'} 인접대지경계선으로부터 H/2 이상 이격 (건축법 제61조, 도로·공원은 중심선 기준)
     - **채광창 대지경계 이격:** 창문 방향 인접대지로부터 0.5H 이상 이격
     """)
 
@@ -828,19 +828,20 @@ with col_viz:
     total_units = 0
     actual_bldg_area = 0
     
-    # 면적 집계용
+    # 면적 집계용 (동 타입별)
     sum_exclusive = 0.0
     sum_supply = 0.0
+    area_by_type = {}
     
     for i, b in enumerate(buildings):
         poly, shape, windows, dividers, b_floors, units, ns_dist, name = b
         row = edited_df.iloc[i]
         
-        # Override logic
-        if row["수동 고정"]:
-            b_floors = row["강제 층수"]
+        # Override logic (빈 칸으로 지운 경우는 AI 추천값 유지)
+        if row["수동 고정"] and not pd.isna(row["강제 층수"]):
+            b_floors = int(row["강제 층수"])
             
-        if b_floors == 0:
+        if b_floors <= 0:
             continue
             
         final_buildings.append((poly, shape, windows, dividers, b_floors, units, ns_dist, name))
@@ -852,6 +853,12 @@ with col_viz:
         actual_bldg_area += poly.area
         sum_exclusive += excl_floor * b_floors
         sum_supply += sup_floor * b_floors
+        
+        agg = area_by_type.setdefault(name, {"동": 0, "세대": 0, "전용": 0.0, "공급": 0.0})
+        agg["동"] += 1
+        agg["세대"] += units * b_floors
+        agg["전용"] += excl_floor * b_floors
+        agg["공급"] += sup_floor * b_floors
         
     bcr = (actual_bldg_area / site_area) * 100 if site_area > 0 else 0
     far = (total_floor_area / site_area) * 100 if site_area > 0 else 0
@@ -865,16 +872,28 @@ with col_viz:
         metrics_col4.metric("용적률 (FAR)", f"{far:.2f} %")
         
         st.subheader("📊 면적 산정 결과")
-        sum_contract = sum_supply * (1 + other_common_pct / 100.0)
-        area_df = pd.DataFrame([
-            {"구분": "합계", 
-             "전용면적 (m²)": f"{sum_exclusive:,.1f}", 
-             "공급면적 (m²)": f"{sum_supply:,.1f}", 
-             "계약면적 (m²)": f"{sum_contract:,.1f}",
-             "기타공용 비율": f"{other_common_pct}%"}
-        ])
-        st.dataframe(area_df, hide_index=True, use_container_width=True)
-        st.caption("※ 용적률 산정용 연면적은 **공급면적(전용+주거공용)** 합계를 기준으로 계산되었습니다.")
+        oc = other_common_pct / 100.0
+        area_rows = []
+        for t_name in sorted(area_by_type):
+            a = area_by_type[t_name]
+            area_rows.append({
+                "동 타입": t_name, "동 수": a["동"], "세대수": a["세대"],
+                "세대당 공급 (m²)": round(a["공급"] / a["세대"], 1) if a["세대"] else 0.0,
+                "전용면적 합계 (m²)": round(a["전용"], 1),
+                "공급면적 합계 (m²)": round(a["공급"], 1),
+                "계약면적 합계 (m²)": round(a["공급"] * (1 + oc), 1),
+            })
+        area_rows.append({
+            "동 타입": "합계", "동 수": len(final_buildings), "세대수": total_units,
+            "세대당 공급 (m²)": round(sum_supply / total_units, 1) if total_units else 0.0,
+            "전용면적 합계 (m²)": round(sum_exclusive, 1),
+            "공급면적 합계 (m²)": round(sum_supply, 1),
+            "계약면적 합계 (m²)": round(sum_supply * (1 + oc), 1),
+        })
+        st.dataframe(pd.DataFrame(area_rows), hide_index=True, use_container_width=True,
+                     column_config={c: st.column_config.NumberColumn(format="%.1f") for c in
+                                    ["세대당 공급 (m²)", "전용면적 합계 (m²)", "공급면적 합계 (m²)", "계약면적 합계 (m²)"]})
+        st.caption(f"※ 용적률 = 공급면적(전용+주거공용) 합계 ÷ 대지면적. 발코니(서비스면적) 제외. 계약면적 = 공급면적 + 기타공용({other_common_pct}%, 지하주차장·관리동 등 — 용적률 미산입).")
 
         
         if st.session_state.get('hint_msg'):
