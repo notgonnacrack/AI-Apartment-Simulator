@@ -36,7 +36,7 @@ UNIT_TYPES = {
     "65m²(계단식)": (26.0, 15.0, 2, 65.0, "판상형"),
     "74m²(계단식)": (28.0, 15.5, 2, 74.0, "판상형"),
     "84m²(계단식)": (30.0, 16.0, 2, 84.0, "판상형"),
-    "84m²(탑상형)": (24.0, 24.0, 3, 84.0, "L자형"),
+    "84m²(탑상형)": (32.0, 18.0, 3, 84.0, "L자형"),
     "114m²(계단식)": (38.0, 17.0, 2, 114.0, "판상형"),
     "114m²(타워형)": (33.0, 33.0, 3, 114.0, "L자형"),
 }
@@ -343,7 +343,7 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
                         placed = True
                         break
                     
-    return buildings, site_area, bldg_area
+    return buildings, site_area, bldg_area, base_site_poly
 
 st.set_page_config(layout="wide", page_title="속 터져서 내가 직접 만들어본 공동주택 가배치")
 st.title("속 터져서 내가 직접 만들어 본 공동주택 假배치 😤")
@@ -352,11 +352,7 @@ st.markdown("<div style='background-color: #ffe066; padding: 5px 15px; border-ra
 col_input, col_viz = st.columns([1, 2])
 
 with col_input:
-    st.header("1. 일조 시뮬레이션 (동지 기준)")
-    time_of_day = st.slider("시간대 (Time of Day)", min_value=9.0, max_value=15.0, value=12.0, step=0.5, format="%.1f 시")
-    show_shadow = st.checkbox("그림자 표시 (계산에는 영향 없음)", value=True)
-    
-    st.header("2. 대지 및 법규 조건")
+    st.header("1. 대지 정보 및 주변 환경 설정")
     site_shape_type = st.selectbox("대지 형상 (Site Shape)", ["직사각형", "L자형", "ㄱ자형", "사다리꼴"])
     
     # 기본값 초기화
@@ -393,7 +389,7 @@ with col_input:
         site_w = l_w
         site_l = l_l
     max_far = st.number_input("용적률 상한 (%)", min_value=50, max_value=1000, value=300, step=10)
-    max_bcr = st.number_input("건폐율 상한 (%)", min_value=10, max_value=100, value=20, step=2)
+    max_bcr = st.number_input("건폐율 상한 (%)", min_value=10, max_value=100, value=20, step=2, help="💡 [수익성 팁] 법정 최대 건폐율(예: 60%)을 꽉 채우면 일조권 사선제한 때문에 오히려 층수가 깎입니다. 20~25% 수준으로 넉넉히 비워야 건물을 높게 올려 최대 세대수를 뽑을 수 있습니다.")
     exclude_balcony = st.checkbox("서비스면적(발코니) 용적률 제외 보정", value=True, help="실제 아파트처럼 발코니 면적을 용적률 산정에서 제외하여 세대수를 극대화합니다.")
     limit_floors = st.checkbox("층수 제한 있음", value=True)
     if limit_floors:
@@ -406,7 +402,7 @@ with col_input:
                             help="일반적으로 정북방향이 적용되나, 택지개발지구/지구단위계획 등에서는 정남방향이 적용될 수 있습니다.")
         
     st.subheader("교육환경보호구역 (학교 연접 여부)")
-    st.caption("※ 학교 사이에 도로/녹지가 있다면 아래 '인접대지' 체크를 꼭 해제해주세요!")
+    st.caption("※ 예정지와 학교 사이에 녹지나 도로가 있다면 학교에 체크하고 아래 이격거리에 도로나 공원 폭을 입력하세요")
     col_sch_n, col_sch_s = st.columns(2)
     school_n = col_sch_n.checkbox("북쪽 학교 (그림자 검사)", value=False)
     school_s = col_sch_s.checkbox("남쪽 학교 (그림자 검사)", value=False)
@@ -423,10 +419,10 @@ with col_input:
     road_e = col_e.number_input("동쪽 빈 땅 너비 (m)", min_value=0.0, max_value=200.0, value=0.0, step=1.0)
     road_w = col_w.number_input("서쪽 빈 땅 너비 (m)", min_value=0.0, max_value=200.0, value=0.0, step=1.0)
     
-    st.header("3. 평형 선택 (전용면적 기준)")
+    st.header("2. 평형 선택 (전용면적 기준)")
     st.caption("배치에 사용할 평형을 모두 선택해주세요")
     layout_style = st.radio("배치 스타일 최적화 (건물 형태)", 
-                           ["자동 혼합 (현실적 미관+사업성)", "판상형(일자형)만 배치 (밀도/세대수 극대화)", "타워형(L자형)만 배치 (조망/개방감 극대화)"], 
+                           ["자동 혼합", "판상형만 배치", "타워형만 배치"], 
                            horizontal=True)
     plate_only = "판상형" in layout_style
     tower_only = "타워형" in layout_style
@@ -446,6 +442,24 @@ with col_input:
     use_74 = c9.checkbox("74m²", value=False)
     use_84 = c10.checkbox("84m²", value=True)
     use_114 = c11.checkbox("114m²", value=False)
+    
+    st.write("기타 평형 (직접 입력)")
+    use_custom = st.checkbox("기타 평형 활성화", value=False)
+    if use_custom:
+        c_area = st.number_input("전용면적 (m²) - 숫자만 입력하시면 판상형/타워형을 AI가 자동으로 모두 생성합니다.", min_value=10, max_value=300, value=135)
+        
+        import math
+        # 1. 판상형 자동 생성 (2세대 기준)
+        p_footprint = 2.85 * c_area * 2
+        p_b_l = round(math.sqrt(p_footprint / 2.0), 1)
+        p_b_w = round(p_b_l * 2.0, 1)
+        UNIT_TYPES[f"{c_area}m²(판상형)"] = (p_b_w, p_b_l, 2, float(c_area), "판상형")
+        
+        # 2. 타워형 자동 생성 (3세대 기준)
+        t_footprint = 2.85 * c_area * 3
+        t_b_w = round(math.sqrt(t_footprint * 9 / 5.0), 1)
+        UNIT_TYPES[f"{c_area}m²(타워형)"] = (t_b_w, t_b_w, 3, float(c_area), "L자형")
+
     selected_sizes = []
     if use_26: selected_sizes.append("26m²")
     if use_31: selected_sizes.append("31m²")
@@ -458,6 +472,7 @@ with col_input:
     if use_74: selected_sizes.append("74m²")
     if use_84: selected_sizes.append("84m²")
     if use_114: selected_sizes.append("114m²")
+    if use_custom: selected_sizes.append(f"{c_area}m²")
     
     if not selected_sizes:
         st.warning("최소 1개 이상의 평형을 선택해주세요.")
@@ -478,7 +493,7 @@ with col_input:
         st.error(f"비율의 합이 100%가 되어야 합니다. (현재 합계: {total_ratio}%)")
         st.stop()
     
-    st.header("4. 법정 제약조건 설정")
+    st.header("3. 건축 규제 세부 설정")
     st.info("※ 건축법 및 지자체 건축조례 기준 적용")
     h_multiplier = st.number_input("인동간격 규정 (H 배수)", min_value=0.1, max_value=2.0, value=0.8, step=0.1, help="광명시 기준 0.8H, 타 지자체는 조례에 따라 다를 수 있습니다.")
     min_ns_dist = 10.0
@@ -495,10 +510,12 @@ with col_input:
     - **채광창 대지경계 이격:** 창문 방향 인접대지로부터 0.5H 이상 이격
     """)
 
+
+
 with col_viz:
     st.info("💡 **교육환경보호 (일조권):** 학교 부지가 설정되면, 오전 9시~오후 3시 사이에 학교로 그림자를 드리우는 건물을 알아서 층수를 깎아(Step-down) 배치합니다.\n\n💡 **대지경계 사선제한:** 주변에 빈 땅(도로)이 있을 경우 그 너비만큼 일조권(H/2) 및 이격(0.5H) 제한을 완화받아 자동 배치됩니다.\n\n⚠️ **참고:** 도면에 그려지는 붉은색 투영 면적은 '건물 간 인동간격(0.8H)' 확인용입니다. 이 면적이 대지경계선 밖(도로 등)으로 튀어나가는 것은 합법입니다.")
     inputs_tuple = (
-        time_of_day, site_shape_type, trap_bottom, trap_top, trap_height, 
+        layout_style, site_shape_type, trap_bottom, trap_top, trap_height, 
         l_w, l_l, l_w_inner, l_l_inner, max_far, max_bcr, exclude_balcony, 
         limit_floors, floors, sunlight_dir, school_n, school_s, school_e, school_w, 
         road_n, road_s, road_e, road_w, str(selected_sizes), str(size_ratios)
@@ -509,21 +526,35 @@ with col_viz:
     if calc_btn:
         st.session_state['last_inputs'] = inputs_tuple
         with st.spinner("AI가 최적의 배치를 찾고 있습니다... (약 10~20초 소요)"):
-            bldgs, s_area, b_area = auto_optimize_layout(
+            bldgs, s_area, b_area, base_site_poly = auto_optimize_layout(
                 site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=trap_bottom, trap_top=trap_top, trap_height=trap_height, l_w=l_w, l_l=l_l, l_w_inner=l_w_inner, l_l_inner=l_l_inner, exclude_balcony=exclude_balcony, layout_version=18, flip_h=flip_h, plate_only=plate_only, tower_only=tower_only)
             
             hint_msg = ""
+            # 백그라운드 수익성 분석 (모든 배치 스타일 테스트)
+            alternatives = {}
+            if "자동 혼합" not in layout_style:
+                bldgs_m, _, _, _ = auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=trap_bottom, trap_top=trap_top, trap_height=trap_height, l_w=l_w, l_l=l_l, l_w_inner=l_w_inner, l_l_inner=l_l_inner, exclude_balcony=exclude_balcony, layout_version=18, flip_h=flip_h, plate_only=False, tower_only=False)
+                alternatives["자동 혼합"] = sum([b[5] * b[4] for b in bldgs_m])
             if not plate_only:
-                bldgs_p, _, _ = auto_optimize_layout(
-                    site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=trap_bottom, trap_top=trap_top, trap_height=trap_height, l_w=l_w, l_l=l_l, l_w_inner=l_w_inner, l_l_inner=l_l_inner, exclude_balcony=exclude_balcony, layout_version=18, flip_h=flip_h, plate_only=True)
+                bldgs_p, _, _, _ = auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=trap_bottom, trap_top=trap_top, trap_height=trap_height, l_w=l_w, l_l=l_l, l_w_inner=l_w_inner, l_l_inner=l_l_inner, exclude_balcony=exclude_balcony, layout_version=18, flip_h=flip_h, plate_only=True, tower_only=False)
+                alternatives["판상형만 배치"] = sum([b[5] * b[4] for b in bldgs_p])
+            if not tower_only:
+                bldgs_t, _, _, _ = auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=trap_bottom, trap_top=trap_top, trap_height=trap_height, l_w=l_w, l_l=l_l, l_w_inner=l_w_inner, l_l_inner=l_l_inner, exclude_balcony=exclude_balcony, layout_version=18, flip_h=flip_h, plate_only=False, tower_only=True)
+                alternatives["타워형만 배치"] = sum([b[5] * b[4] for b in bldgs_t])
                 
-                units_mixed = sum([b[5] * b[4] for b in bldgs])
-                units_plate = sum([b[5] * b[4] for b in bldgs_p])
-                if units_plate > units_mixed:
-                    diff = units_plate - units_mixed
-                    hint_msg = "\U0001F4A1 **수익성 팁:** '판상형만 배치하기' 옵션을 켜시면 최대 **{:,}세대 (+{:,}세대)**까지 더 뽑아낼 수 있습니다!".format(units_plate, diff)
+            current_units = sum([b[5] * b[4] for b in bldgs])
             
-            st.session_state['sim_result'] = (bldgs, s_area, b_area)
+            if alternatives:
+                best_style = max(alternatives, key=alternatives.get)
+                best_units = alternatives[best_style]
+                
+                if best_units > current_units:
+                    diff = best_units - current_units
+                    hint_msg = f"💡 **수익성 분석:** '{best_style}' 옵션으로 변경하시면 최대 **{best_units:,}세대 (+{diff:,}세대)**까지 더 뽑아낼 수 있습니다!"
+                else:
+                    hint_msg = f"💡 **수익성 분석:** 완벽합니다! 현재 선택하신 배치가 이 대지에서 뽑아낼 수 있는 **최대 세대수({current_units:,}세대)**입니다!"
+                    
+            st.session_state['sim_result'] = (bldgs, s_area, b_area, base_site_poly)
             st.session_state['hint_msg'] = hint_msg
 
     if 'last_inputs' in st.session_state and st.session_state['last_inputs'] != inputs_tuple:
@@ -534,10 +565,18 @@ with col_viz:
         st.info("💡 대지 조건과 법규를 모두 입력하신 후, 위의 '🚀 시뮬레이션 계산 시작' 버튼을 눌러주세요!")
         st.stop()
         
-    buildings, site_area, bldg_area = st.session_state['sim_result']
+    buildings, site_area, bldg_area, base_site_poly = st.session_state['sim_result']
         
     main_viz = st.container()
+    sunlight_ctrls = st.container()
     override_viz = st.container()
+    
+    with sunlight_ctrls:
+        st.subheader("☀️ 일조 시뮬레이션 시간 조절 (배치도 3D 그림자)")
+        col_s1, col_s2 = st.columns([1, 2])
+        show_shadow = col_s1.checkbox("그림자 표시", value=True)
+        time_of_day = col_s2.slider("시간대", min_value=9.0, max_value=15.0, value=12.0, step=0.5, format="%.1f 시")
+
     with override_viz:
         with st.expander('🏢 동별 층수 수동 조절 (Override) - 필요시 클릭하여 펼치기', expanded=False):
             st.caption("AI가 깎아낸 층수를 무시하고 원하는 층수로 강제 고정할 수 있습니다. (체크 시 그림자/이격거리 무시)")
@@ -598,6 +637,9 @@ with col_viz:
         metrics_col2.metric("세팅된 동 수", f"{len(final_buildings)} 동")
         metrics_col3.metric("건폐율 (BCR)", f"{bcr:.2f} %")
         metrics_col4.metric("용적률 (FAR)", f"{far:.2f} %")
+        
+        if st.session_state.get('hint_msg'):
+            st.warning(st.session_state['hint_msg'].replace('💡 ', ''), icon='💡')
         
         azimuth_deg = 180 + (time_of_day - 12) * 15
         altitude_deg = 29.0 - abs(time_of_day - 12) * 4.0
@@ -694,14 +736,16 @@ with col_viz:
         plot_min_y, plot_max_y = -15, site_l + 15
 
         fig.update_layout(
-            xaxis=dict(scaleanchor="y", scaleratio=1, visible=False, range=[plot_min_x, plot_max_x]),
-            yaxis=dict(visible=False, range=[plot_min_y, plot_max_y]),
+            xaxis=dict(scaleanchor="y", scaleratio=1, visible=True, range=[plot_min_x, plot_max_x], title="가로 (m)"),
+            yaxis=dict(visible=True, range=[plot_min_y, plot_max_y], title="세로 (m)"),
             plot_bgcolor='white',
             paper_bgcolor='white',
             margin=dict(l=0, r=0, t=0, b=0),
-            legend=dict(yanchor="bottom", y=0.0, xanchor="left", x=1.01, title="평형 (전용면적)", bgcolor='rgba(255,255,255,0.8)', bordercolor='black', borderwidth=1),
+            legend=dict(yanchor="top", y=0.99, xanchor="right", x=0.99, title="평형 (전용면적)", bgcolor='rgba(255,255,255,0.8)', bordercolor='black', borderwidth=1),
             hovermode='closest',
             height=850
         )
 
         st.plotly_chart(fig, use_container_width=True)
+
+# Trigger reload
