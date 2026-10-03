@@ -127,7 +127,7 @@ def is_valid_orientation(windows):
     return True
 
 @st.cache_data(show_spinner=False)
-def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=0, trap_top=0, trap_height=0, l_w=0, l_l=0, l_w_inner=0, l_l_inner=0, exclude_balcony=False, layout_version=18, flip_h=False, plate_only=False):
+def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=0, trap_top=0, trap_height=0, l_w=0, l_l=0, l_w_inner=0, l_l_inner=0, exclude_balcony=False, layout_version=18, flip_h=False, plate_only=False, tower_only=False):
     
     if site_shape_type == "직사각형":
         base_site_poly = Polygon([(0,0), (site_w,0), (site_w,site_l), (0,site_l)])
@@ -170,6 +170,8 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
     selected_keys = [k for k in UNIT_TYPES.keys() if any(size in k for size in selected_sizes)]
     if plate_only:
         selected_keys = [k for k in selected_keys if UNIT_TYPES[k][4] == "판상형"]
+    if tower_only:
+        selected_keys = [k for k in selected_keys if UNIT_TYPES[k][4] == "L자형"]
     for name in selected_keys:
         size_label = name.split("(")[0]
         if size_ratios.get(size_label, 0) <= 0:
@@ -422,8 +424,12 @@ with col_input:
     road_w = col_w.number_input("서쪽 빈 땅 너비 (m)", min_value=0.0, max_value=200.0, value=0.0, step=1.0)
     
     st.header("3. 평형 선택 (전용면적 기준)")
-    st.caption("배치에 사용할 평형을 모두 선택해주세요 (판상형/타워형은 자동 혼합 최적화)")
-    plate_only = st.checkbox("판상형(일자형) 건물만 배치하기 (타워형 배제)", value=False)
+    st.caption("배치에 사용할 평형을 모두 선택해주세요")
+    layout_style = st.radio("배치 스타일 최적화 (건물 형태)", 
+                           ["자동 혼합 (현실적 미관+사업성)", "판상형(일자형)만 배치 (밀도/세대수 극대화)", "타워형(L자형)만 배치 (조망/개방감 극대화)"], 
+                           horizontal=True)
+    plate_only = "판상형" in layout_style
+    tower_only = "타워형" in layout_style
     
     st.write("초소형(복도식)")
     c1, c2, c3, c4, c5 = st.columns(5)
@@ -504,8 +510,21 @@ with col_viz:
         st.session_state['last_inputs'] = inputs_tuple
         with st.spinner("AI가 최적의 배치를 찾고 있습니다... (약 10~20초 소요)"):
             bldgs, s_area, b_area = auto_optimize_layout(
-                site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=trap_bottom, trap_top=trap_top, trap_height=trap_height, l_w=l_w, l_l=l_l, l_w_inner=l_w_inner, l_l_inner=l_l_inner, exclude_balcony=exclude_balcony, layout_version=18, flip_h=flip_h, plate_only=plate_only)
+                site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=trap_bottom, trap_top=trap_top, trap_height=trap_height, l_w=l_w, l_l=l_l, l_w_inner=l_w_inner, l_l_inner=l_l_inner, exclude_balcony=exclude_balcony, layout_version=18, flip_h=flip_h, plate_only=plate_only, tower_only=tower_only)
+            
+            hint_msg = ""
+            if not plate_only:
+                bldgs_p, _, _ = auto_optimize_layout(
+                    site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=trap_bottom, trap_top=trap_top, trap_height=trap_height, l_w=l_w, l_l=l_l, l_w_inner=l_w_inner, l_l_inner=l_l_inner, exclude_balcony=exclude_balcony, layout_version=18, flip_h=flip_h, plate_only=True)
+                
+                units_mixed = sum([b[5] * b[4] for b in bldgs])
+                units_plate = sum([b[5] * b[4] for b in bldgs_p])
+                if units_plate > units_mixed:
+                    diff = units_plate - units_mixed
+                    hint_msg = "\U0001F4A1 **수익성 팁:** '판상형만 배치하기' 옵션을 켜시면 최대 **{:,}세대 (+{:,}세대)**까지 더 뽑아낼 수 있습니다!".format(units_plate, diff)
+            
             st.session_state['sim_result'] = (bldgs, s_area, b_area)
+            st.session_state['hint_msg'] = hint_msg
 
     if 'last_inputs' in st.session_state and st.session_state['last_inputs'] != inputs_tuple:
         st.warning("⚠️ 입력값이 변경되었습니다. 적용하려면 '🚀 시뮬레이션 계산 시작' 버튼을 다시 눌러주세요.")
