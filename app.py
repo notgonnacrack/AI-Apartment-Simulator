@@ -36,12 +36,15 @@ UNIT_TYPES = {
     "65m²(계단식)": (26.0, 15.0, 2, 65.0, "판상형"),
     "74m²(계단식)": (28.0, 15.5, 2, 74.0, "판상형"),
     "84m²(계단식)": (30.0, 16.0, 2, 84.0, "판상형"),
-    "84m²(탑상형)": (24.0, 24.0, 3, 84.0, "L자형")
+    "84m²(탑상형)": (24.0, 24.0, 3, 84.0, "L자형"),
+    "114m²(계단식)": (38.0, 17.0, 2, 114.0, "판상형"),
+    "114m²(타워형)": (33.0, 33.0, 3, 114.0, "L자형"),
 }
 
 SIZE_COLORS = {
     "84m²(탑상형)": "#3cb371",
     "84m²": "#6495ed",
+    "114m²": "#ff69b4",
     "59m²": "#00ced1",
     "74m²": "#ff7f50",
     "65m²": "#dda0dd",
@@ -124,7 +127,7 @@ def is_valid_orientation(windows):
     return True
 
 @st.cache_data(show_spinner=False)
-def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=0, trap_top=0, trap_height=0, l_w=0, l_l=0, l_w_inner=0, l_l_inner=0, exclude_balcony=False, layout_version=18, flip_h=False):
+def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=0, trap_top=0, trap_height=0, l_w=0, l_l=0, l_w_inner=0, l_l_inner=0, exclude_balcony=False, layout_version=18, flip_h=False, plate_only=False):
     
     if site_shape_type == "직사각형":
         base_site_poly = Polygon([(0,0), (site_w,0), (site_w,site_l), (0,site_l)])
@@ -165,6 +168,8 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
     types_info = []
     
     selected_keys = [k for k in UNIT_TYPES.keys() if any(size in k for size in selected_sizes)]
+    if plate_only:
+        selected_keys = [k for k in selected_keys if UNIT_TYPES[k][4] == "판상형"]
     for name in selected_keys:
         size_label = name.split("(")[0]
         if size_ratios.get(size_label, 0) <= 0:
@@ -417,7 +422,8 @@ with col_input:
     road_w = col_w.number_input("서쪽 빈 땅 너비 (m)", min_value=0.0, max_value=200.0, value=0.0, step=1.0)
     
     st.header("3. 평형 선택 (전용면적 기준)")
-    st.caption("배치에 사용할 평형을 모두 선택하세요 (판상형/타워형은 자동 혼합 최적화)")
+    st.caption("배치에 사용할 평형을 모두 선택해주세요 (판상형/타워형은 자동 혼합 최적화)")
+    plate_only = st.checkbox("판상형(일자형) 건물만 배치하기 (타워형 배제)", value=False)
     
     st.write("초소형(복도식)")
     c1, c2, c3, c4, c5 = st.columns(5)
@@ -426,13 +432,14 @@ with col_input:
     use_36 = c3.checkbox("36m²", value=False)
     use_41 = c4.checkbox("41m²", value=False)
     use_46 = c5.checkbox("46m²", value=False)
-    st.write("소형/중형(계단식)")
-    c6, c7, c8, c9, c10 = st.columns(5)
+    st.write("소/중대형(계단식)")
+    c6, c7, c8, c9, c10, c11 = st.columns(6)
     use_55 = c6.checkbox("55m²", value=False)
     use_59 = c7.checkbox("59m²", value=False)
     use_65 = c8.checkbox("65m²", value=False)
     use_74 = c9.checkbox("74m²", value=False)
     use_84 = c10.checkbox("84m²", value=True)
+    use_114 = c11.checkbox("114m²", value=False)
     selected_sizes = []
     if use_26: selected_sizes.append("26m²")
     if use_31: selected_sizes.append("31m²")
@@ -444,6 +451,7 @@ with col_input:
     if use_65: selected_sizes.append("65m²")
     if use_74: selected_sizes.append("74m²")
     if use_84: selected_sizes.append("84m²")
+    if use_114: selected_sizes.append("114m²")
     
     if not selected_sizes:
         st.warning("최소 1개 이상의 평형을 선택해주세요.")
@@ -496,7 +504,7 @@ with col_viz:
         st.session_state['last_inputs'] = inputs_tuple
         with st.spinner("AI가 최적의 배치를 찾고 있습니다... (약 10~20초 소요)"):
             bldgs, s_area, b_area = auto_optimize_layout(
-                site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=trap_bottom, trap_top=trap_top, trap_height=trap_height, l_w=l_w, l_l=l_l, l_w_inner=l_w_inner, l_l_inner=l_l_inner, exclude_balcony=exclude_balcony, layout_version=18, flip_h=flip_h)
+                site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=trap_bottom, trap_top=trap_top, trap_height=trap_height, l_w=l_w, l_l=l_l, l_w_inner=l_w_inner, l_l_inner=l_l_inner, exclude_balcony=exclude_balcony, layout_version=18, flip_h=flip_h, plate_only=plate_only)
             st.session_state['sim_result'] = (bldgs, s_area, b_area)
 
     if 'last_inputs' in st.session_state and st.session_state['last_inputs'] != inputs_tuple:
