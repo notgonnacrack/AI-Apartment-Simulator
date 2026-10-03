@@ -127,7 +127,7 @@ def is_valid_orientation(windows):
     return True
 
 @st.cache_data(show_spinner=False)
-def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=0, trap_top=0, trap_height=0, l_w=0, l_l=0, l_w_inner=0, l_l_inner=0, exclude_balcony=False, layout_version=18, flip_h=False, plate_only=False, tower_only=False):
+def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=0, trap_top=0, trap_height=0, l_w=0, l_l=0, l_w_inner=0, l_l_inner=0, exclude_balcony=False, layout_version=18, flip_h=False, flip_v=False, plate_only=False, tower_only=False):
     
     if site_shape_type == "직사각형":
         base_site_poly = Polygon([(0,0), (site_w,0), (site_w,site_l), (0,site_l)])
@@ -146,6 +146,11 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
         base_site_poly = shapely.affinity.scale(base_site_poly, xfact=-1, origin='center')
         minx, _, _, _ = base_site_poly.bounds
         base_site_poly = shapely.affinity.translate(base_site_poly, xoff=-minx)
+    if flip_v:
+        import shapely.affinity
+        base_site_poly = shapely.affinity.scale(base_site_poly, yfact=-1, origin='center')
+        _, miny, _, _ = base_site_poly.bounds
+        base_site_poly = shapely.affinity.translate(base_site_poly, yoff=-miny)
 
     site_area = base_site_poly.area
     # 다각형의 안쪽으로 setback만큼 쪼그라든(Shrink) 실제 건축가능 영역 생성
@@ -187,9 +192,9 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
     
     points = []
     # 대지가 커지면 연산 속도를 위해 탐색 간격을 넓힘
-    step_size = max(15.0, min(site_w, site_l) / 30.0)
-    for x in np.arange(setback_x, site_w - setback_x, step_size):
-        for y in np.arange(setback_y, site_l - setback_y, step_size):
+    step_size = max(15.0, min(maxx - minx, maxy - miny) / 30.0)
+    for x in np.arange(minx + setback_x, maxx - setback_x, step_size):
+        for y in np.arange(miny + setback_y, maxy - setback_y, step_size):
             points.append((x,y))
             
     random.seed(42)
@@ -380,27 +385,32 @@ with col_input:
     
     if site_shape_type == "직사각형":
         st.caption("※ 선택한 형상에 맞게 가로/세로 길이로 다각형 대지가 생성됩니다.")
-        site_w = st.number_input("대지 가로 길이 (m)", min_value=30, max_value=400, value=200, step=10)
-        site_l = st.number_input("대지 세로 길이 (m)", min_value=30, max_value=400, value=200, step=10)
+        site_w = st.number_input("대지 가로 길이 (m)", min_value=30, max_value=500, value=200, step=10)
+        site_l = st.number_input("대지 세로 길이 (m)", min_value=30, max_value=500, value=200, step=10)
     elif site_shape_type == "사다리꼴":
         st.caption("※ 사다리꼴의 치수를 상세 입력합니다.")
-        trap_bottom = st.number_input("아랫변 길이 (긴변, m)", min_value=30, max_value=400, value=250, step=10)
-        trap_top = st.number_input("윗변 길이 (짧은변, m)", min_value=10, max_value=400, value=150, step=10)
-        trap_height = st.number_input("높이 (m)", min_value=30, max_value=400, value=200, step=10)
+        trap_bottom = st.number_input("아랫변 길이 (긴변, m)", min_value=30, max_value=500, value=250, step=10)
+        trap_top = st.number_input("윗변 길이 (짧은변, m)", min_value=10, max_value=500, value=150, step=10)
+        trap_height = st.number_input("높이 (m)", min_value=30, max_value=500, value=200, step=10)
         site_w = max(trap_bottom, trap_top)
         site_l = trap_height
     elif site_shape_type == "L자형" or site_shape_type == "ㄱ자형":
         st.caption("※ 선택하신 대지의 치수를 상세 입력합니다.")
         col_w1, col_w2 = st.columns(2)
-        l_w = col_w1.number_input("가로 전체 길이 (m)", min_value=30, max_value=400, value=250, step=10)
-        l_w_inner = col_w2.number_input("파인 부분 가로 (m)", min_value=10, max_value=400, value=120, step=10)
+        l_w = col_w1.number_input("가로 전체 길이 (m)", min_value=30, max_value=500, value=250, step=10)
+        l_w_inner = col_w2.number_input("파인 부분 가로 (m)", min_value=10, max_value=500, value=120, step=10)
         col_l1, col_l2 = st.columns(2)
-        l_l = col_l1.number_input("세로 전체 길이 (m)", min_value=30, max_value=400, value=200, step=10)
-        l_l_inner = col_l2.number_input("파인 부분 세로 (m)", min_value=10, max_value=400, value=100, step=10)
+        l_l = col_l1.number_input("세로 전체 길이 (m)", min_value=30, max_value=500, value=200, step=10)
+        l_l_inner = col_l2.number_input("파인 부분 세로 (m)", min_value=10, max_value=500, value=100, step=10)
 
     flip_h = False
-    if site_shape_type in ["L자형", "ㄱ자형", "사다리꼴"]:
-        flip_h = st.checkbox("좌우 반전", value=False)
+    flip_v = False
+    if site_shape_type in ["L자형", "ㄷ자형", "사다리꼴"]:
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            flip_h = st.checkbox("좌우 반전 (대칭)", value=False)
+        with col_f2:
+            flip_v = st.checkbox("상하 반전 (대칭)", value=False)
 
         # 예외 처리
         l_w_inner = min(l_w_inner, l_w - 10)
@@ -537,7 +547,8 @@ with col_viz:
         layout_style, site_shape_type, trap_bottom, trap_top, trap_height, 
         l_w, l_l, l_w_inner, l_l_inner, max_far, max_bcr, exclude_balcony, 
         limit_floors, floors, sunlight_dir, school_n, school_s, school_e, school_w, 
-        road_n, road_s, road_e, road_w, str(selected_sizes), str(size_ratios)
+        road_n, road_s, road_e, road_w, str(selected_sizes), str(size_ratios),
+        flip_h, flip_v
     )
 
     calc_btn = st.button("🚀 시뮬레이션 계산 시작", type="primary", use_container_width=True)
@@ -552,13 +563,13 @@ with col_viz:
             # 백그라운드 수익성 분석 (모든 배치 스타일 테스트)
             alternatives = {}
             if "자동 혼합" not in layout_style:
-                bldgs_m, _, _, _ = auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=trap_bottom, trap_top=trap_top, trap_height=trap_height, l_w=l_w, l_l=l_l, l_w_inner=l_w_inner, l_l_inner=l_l_inner, exclude_balcony=exclude_balcony, layout_version=18, flip_h=flip_h, plate_only=False, tower_only=False)
+                bldgs_m, _, _, _ = auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=trap_bottom, trap_top=trap_top, trap_height=trap_height, l_w=l_w, l_l=l_l, l_w_inner=l_w_inner, l_l_inner=l_l_inner, exclude_balcony=exclude_balcony, layout_version=18, flip_h=flip_h, flip_v=flip_v, plate_only=False, tower_only=False)
                 alternatives["자동 혼합"] = sum([b[5] * b[4] for b in bldgs_m])
             if not plate_only:
-                bldgs_p, _, _, _ = auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=trap_bottom, trap_top=trap_top, trap_height=trap_height, l_w=l_w, l_l=l_l, l_w_inner=l_w_inner, l_l_inner=l_l_inner, exclude_balcony=exclude_balcony, layout_version=18, flip_h=flip_h, plate_only=True, tower_only=False)
+                bldgs_p, _, _, _ = auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=trap_bottom, trap_top=trap_top, trap_height=trap_height, l_w=l_w, l_l=l_l, l_w_inner=l_w_inner, l_l_inner=l_l_inner, exclude_balcony=exclude_balcony, layout_version=18, flip_h=flip_h, flip_v=flip_v, plate_only=True, tower_only=False)
                 alternatives["판상형만 배치"] = sum([b[5] * b[4] for b in bldgs_p])
             if not tower_only:
-                bldgs_t, _, _, _ = auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=trap_bottom, trap_top=trap_top, trap_height=trap_height, l_w=l_w, l_l=l_l, l_w_inner=l_w_inner, l_l_inner=l_l_inner, exclude_balcony=exclude_balcony, layout_version=18, flip_h=flip_h, plate_only=False, tower_only=True)
+                bldgs_t, _, _, _ = auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=trap_bottom, trap_top=trap_top, trap_height=trap_height, l_w=l_w, l_l=l_l, l_w_inner=l_w_inner, l_l_inner=l_l_inner, exclude_balcony=exclude_balcony, layout_version=18, flip_h=flip_h, flip_v=flip_v, plate_only=False, tower_only=True)
                 alternatives["타워형만 배치"] = sum([b[5] * b[4] for b in bldgs_t])
                 
             current_units = sum([b[5] * b[4] for b in bldgs])
@@ -683,6 +694,11 @@ with col_viz:
             base_site_poly = shapely.affinity.scale(base_site_poly, xfact=-1, origin='center')
             minx, _, _, _ = base_site_poly.bounds
             base_site_poly = shapely.affinity.translate(base_site_poly, xoff=-minx)
+        if flip_v:
+            import shapely.affinity
+            base_site_poly = shapely.affinity.scale(base_site_poly, yfact=-1, origin='center')
+            _, miny, _, _ = base_site_poly.bounds
+            base_site_poly = shapely.affinity.translate(base_site_poly, yoff=-miny)
             
         site_poly = base_site_poly.buffer(-setback_x)
 
@@ -751,8 +767,9 @@ with col_viz:
 
 
 
-        plot_min_x, plot_max_x = -15, site_w + 15
-        plot_min_y, plot_max_y = -15, site_l + 15
+        b_minx, b_miny, b_maxx, b_maxy = base_site_poly.bounds
+        plot_min_x, plot_max_x = b_minx - 15, b_maxx + 15
+        plot_min_y, plot_max_y = b_miny - 15, b_maxy + 15
 
         fig.update_layout(
             xaxis=dict(scaleanchor="y", scaleratio=1, visible=True, range=[plot_min_x, plot_max_x], title="가로 (m)"),
