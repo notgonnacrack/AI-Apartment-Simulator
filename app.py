@@ -346,7 +346,25 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
     return buildings, site_area, bldg_area, base_site_poly
 
 st.set_page_config(layout="wide", page_title="속 터져서 내가 직접 만들어본 공동주택 가배치")
-st.title("속 터져서 내가 직접 만들어 본 공동주택 假배치 😤")
+
+import os
+@st.dialog("📖 AI 아파트 가배치 시뮬레이터 사용 메뉴얼", width="large")
+def show_manual():
+    manual_path = "app_manual.md"
+    if os.path.exists(manual_path):
+        with open(manual_path, "r", encoding="utf-8") as f:
+            st.markdown(f.read())
+    else:
+        st.error("매뉴얼 파일을 찾을 수 없습니다.")
+
+col_title, col_btn = st.columns([5, 1])
+with col_title:
+    st.title("속 터져서 내가 직접 만들어 본 공동주택 假배치 😤")
+with col_btn:
+    st.write("")
+    st.write("")
+    if st.button("📖 사용 매뉴얼 띄우기", use_container_width=True, type="secondary"):
+        show_manual()
 st.markdown("<div style='background-color: #ffe066; padding: 5px 15px; border-radius: 5px; display: inline-block; font-weight: 800; font-size: 1.1em; color: #333333; margin-bottom: 20px;'>© 2026 김진우 (Jinwoo Kim). All rights reserved.</div>", unsafe_allow_html=True)
 
 col_input, col_viz = st.columns([1, 2])
