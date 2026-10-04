@@ -281,12 +281,13 @@ ALL_GROUPS = ("판상", "탑상3", "탑상4", "판탑4", "판탑5")
 AUTO_COMBOS = {
     "판상형만": ("판상",),
     "탑상형 (3호·4호)": ("탑상3", "탑상4"),
+    "판탑 혼합동만": ("판탑4", "판탑5"),
     "판탑 혼합동 + 판상형": ("판상", "판탑4", "판탑5"),
     "전체 혼합 (판상+탑상+판탑)": ALL_GROUPS,
 }
 
 @st.cache_data(show_spinner=False)
-def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=0, trap_top=0, trap_height=0, l_w=0, l_l=0, l_w_inner=0, l_l_inner=0, eff=DEFAULT_EFF, layout_version=21, flip_h=False, flip_v=False, plate_only=False, tower_only=False, allowed_groups=None):
+def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=0, trap_top=0, trap_height=0, l_w=0, l_l=0, l_w_inner=0, l_l_inner=0, eff=DEFAULT_EFF, layout_version=23, flip_h=False, flip_v=False, plate_only=False, tower_only=False, allowed_groups=None):
     
     if site_shape_type == "직사각형":
         base_site_poly = Polygon([(0,0), (site_w,0), (site_w,site_l), (0,site_l)])
@@ -402,10 +403,13 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
             target_pct = size_ratios[t['size_label']] / total_ratio if total_ratio > 0 else 0
             current_pct = placed_counts[t['size_label']] / total_u if total_u > 0 else 0
             deficit = target_pct - current_pct
-            density = t['units'] / t['area']
+            density = round(t['units'] / t['area'], 5)
             return (deficit, density)
             
-        current_types = sorted(types_info, key=get_priority, reverse=True)
+        # 동일한 우선순위(같은 평형의 다른 형태)일 때 랜덤하게 선택되도록 섞은 후 정렬
+        current_types = list(types_info)
+        random.shuffle(current_types)
+        current_types = sorted(current_types, key=get_priority, reverse=True)
         
         for t_info in current_types:
             if placed: break
@@ -640,9 +644,11 @@ with col_input:
     st.caption("배치에 사용할 평형을 모두 선택해주세요")
     STYLE_OPTIONS = {
         "🤖 AI 자동 (세대수 최대 조합)": None,
-        "판상형만": ("판상",),
-        "탑상형만 (3호·4호)": ("탑상3", "탑상4"),
-        "판탑 혼합동만": ("판탑4", "판탑5"),
+        "🟡 판상형만": ("판상",),
+        "🔴 탑상형 (3호·4호)": ("탑상3", "탑상4"),
+        "🟢 판탑 혼합동만": ("판탑4", "판탑5"),
+        "🟠 판탑 혼합동 + 판상형": ("판상", "판탑4", "판탑5"),
+        "전체 혼합 (판상+탑상+판탑)": ("판상", "탑상3", "탑상4", "판탑4", "판탑5")
     }
     layout_style = st.radio("배치 스타일 최적화 (건물 형태)", 
                            list(STYLE_OPTIONS.keys()), 
