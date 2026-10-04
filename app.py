@@ -83,6 +83,8 @@ def get_type_color(name):
         l, s = 0.50, 0.85
     elif "탑상4호" in name:
         l, s = 0.40, 0.90
+    elif "탑상5호" in name:
+        l, s = 0.32, 0.90
     else:
         l, s = 0.5, 0.7
         
@@ -230,6 +232,19 @@ def build_composite_types(unit_types, composite_geom):
         unit_types[n4] = (W, W, 4, area, "탑상4호")
         fac4 = [(t, t, W, t, 0, 1), (t, t, t, W, 1, 0)]
         composite_geom[n4] = (poly4, win4, div4, fac4)
+
+        # 2) 탑상 5호 (2+3, 출입구 2개) : 한쪽 날개 2세대 코어 + 다른 쪽 날개 3세대 코어
+        #    세대당 면적은 탑상 3호와 동일. 날개 길이 = 세대수 × u_t + t/2 (모서리 몫)
+        WA = 2 * u_t + t / 2.0               # 2세대 날개 (가로)
+        WB = 3 * u_t + t / 2.0               # 3세대 날개 (세로)
+        poly5 = Polygon([(0, 0), (WA, 0), (WA, t), (t, t), (t, WB), (0, WB)])
+        win5 = [(0, 0, WA, 0, 0, -1), (0, 0, 0, WB, -1, 0)]
+        div5 = [((WA - u_t, 0), (WA - u_t, t)), ((t / 2.0, 0), (t / 2.0, t)), ((t / 2.0, t), (t, t)),
+                ((0, WB - u_t), (t, WB - u_t)), ((0, WB - 2 * u_t), (t, WB - 2 * u_t))]
+        n5 = f"{size_label}(탑상5호)"
+        unit_types[n5] = (WA, WB, 5, area, "탑상5호")
+        fac5 = [(t, t, WA, t, 0, 1), (t, t, t, WB, 1, 0)]
+        composite_geom[n5] = (poly5, win5, div5, fac5)
         # ※ 판탑 혼합동은 2026-10-04 제거: 45° 회전 배치에서는 탑상 4호와 면적·세대수·방향이 같아
         #   가배치 단계에서 구분 실익이 없음 (사용자 결정)
 
@@ -239,6 +254,7 @@ def get_type_group(name, shape, units):
     if shape == "판상형": return "판상"
     if shape == "L자형": return "탑상3"
     if shape == "탑상4호": return "탑상4"
+    if shape == "탑상5호": return "탑상5"
     return "기타"
 
 # ==========================================================
@@ -257,26 +273,26 @@ def type_area_breakdown(name, eff=DEFAULT_EFF):
     if shape == "판상형":
         e = e_corr if "복도식" in name else e_stair
         supply = area / e * units
-    elif shape in ("L자형", "탑상4호"):
+    elif shape in ("L자형", "탑상4호", "탑상5호"):
         supply = area / e_tower * units
     else:
         supply = area / e_stair * units
     return area * units, supply
 
-ALL_GROUPS = ("판상", "탑상3", "탑상4")
-# AI 자동 모드에서 비교하는 조합들
+ALL_GROUPS = ("판상", "탑상3", "탑상4", "탑상5")
+# 항상 계산해 비교하는 세 안 (혼합 = 판상형·탑상형 결과 이상이 보장되는 최대안)
 AUTO_COMBOS = {
     "판상형": ("판상",),
-    "탑상형": ("탑상3", "탑상4"),
+    "탑상형": ("탑상3", "탑상4", "탑상5"),
     "혼합": ALL_GROUPS,
 }
-GROUP_LABELS = {"판상": "판상형", "탑상3": "탑상 3호", "탑상4": "탑상 4호"}
+GROUP_LABELS = {"판상": "판상형", "탑상3": "탑상 3호", "탑상4": "탑상 4호", "탑상5": "탑상 5호(2+3)"}
 # 조합 간 세대수 차이가 이 비율 이내면 '사실상 같음'으로 안내 (탑상동 그리디 배치의 무작위 편차 수준)
 NEAR_TIE_RATIO = 0.03
 
 def tower_units_of(name, shape, units):
-    """층당 탑상형 세대수: 탑상 3호·4호 동은 전 세대가 탑상형"""
-    if shape in ("L자형", "탑상4호"):
+    """층당 탑상형 세대수: 탑상 3호·4호·5호 동은 전 세대가 탑상형"""
+    if shape in ("L자형", "탑상4호", "탑상5호"):
         return units
     return 0
 
@@ -347,7 +363,7 @@ def _proj(w, dist):
     return Polygon([(wx1, wy1), (wx2, wy2), (wx2 + dx * dist, wy2 + dy * dist), (wx1 + dx * dist, wy1 + dy * dist)])
 
 @st.cache_data(show_spinner=False)
-def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=0, trap_top=0, trap_height=0, l_w=0, l_l=0, l_w_inner=0, l_l_inner=0, eff=DEFAULT_EFF, layout_version=32, flip_h=False, flip_v=False, plate_only=False, tower_only=False, allowed_groups=None, min_floors=5, n_trials=N_TRIALS, min_tower_ratio=0.0):
+def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=0, trap_top=0, trap_height=0, l_w=0, l_l=0, l_w_inner=0, l_l_inner=0, eff=DEFAULT_EFF, layout_version=34, flip_h=False, flip_v=False, plate_only=False, tower_only=False, allowed_groups=None, min_floors=5, n_trials=N_TRIALS, min_tower_ratio=0.0):
 
     if site_shape_type == "직사각형":
         base_site_poly = Polygon([(0,0), (site_w,0), (site_w,site_l), (0,site_l)])
@@ -459,7 +475,7 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
         if plate_only:
             allowed_groups = ("판상",)
         elif tower_only:
-            allowed_groups = ("탑상3", "탑상4")
+            allowed_groups = ("탑상3", "탑상4", "탑상5")
         else:
             allowed_groups = ALL_GROUPS
     selected_keys = [k for k in selected_keys if get_type_group(k, UNIT_TYPES[k][4], UNIT_TYPES[k][2]) in allowed_groups]
@@ -546,8 +562,10 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
                     return False
         return True
 
-    def run_trial(seed, init=()):
-        """무작위 순서 그리디 배치. init(이미 놓인 동 목록)이 있으면 그 위에 빈자리를 채움"""
+    def run_trial(seed, init=(), types=None):
+        """무작위 순서 그리디 배치. init(이미 놓인 동 목록)이 있으면 그 위에 빈자리를 채움.
+        types를 주면 그 동 타입만 사용 (기본: 허용된 전체 타입)"""
+        use_types = types_info if types is None else types
         rnd = random.Random(seed)
         pts = list(points)
         rnd.shuffle(pts)
@@ -579,7 +597,7 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
                 return (deficit, density)
 
             # 동일한 우선순위(같은 평형의 다른 형태)일 때 랜덤하게 선택되도록 섞은 후 정렬
-            current_types = list(types_info)
+            current_types = list(use_types)
             rnd.shuffle(current_types)
             current_types = sorted(current_types, key=get_priority, reverse=True)
 
@@ -869,15 +887,25 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
         bldg_area = sum(t['area'] for _, _, t in row_init)
         return buildings, site_area, bldg_area, base_site_poly
 
-    # 혼합 조합: (판상 열 배치 + 빈자리 그리디 채움)과 순수 그리디 n회 중 최대
-    #  → 탑상형 최소 비율이 없으면 '판상형만' 결과보다 세대수가 적게 나오지 않음
+    # 혼합 조합: 아래 후보 중 최대
+    #  ① 판상 열 배치 + 빈자리 그리디 채움  ② 전체 타입 그리디 n회  ③ 탑상동만 그리디 n회
+    #  → ①로 '판상형'안 이상, ③(탑상형안과 같은 계산)으로 '탑상형'안 이상이 항상 보장됨
     #  → 탑상형 최소 비율이 있으면 비율을 충족한 결과를 우선 (전부 미달이면 세대수 최대)
     def rank(result):
         meets = tower_share(result[1]) >= min_tower_ratio - RATIO_TOL
         return (meets, result[0])
-    best_result = run_trial(42, init=row_init) if row_init else None
+    tower_types = [t for t in types_info if t['tower_units'] > 0]
+    candidates = []
+    if row_init:
+        candidates.append(lambda: run_trial(42, init=row_init))
     for trial in range(n_trials):
-        result = run_trial(42 + trial)
+        candidates.append(lambda s=42 + trial: run_trial(s))
+    if plate_types and tower_types:
+        for trial in range(n_trials):
+            candidates.append(lambda s=42 + trial: run_trial(s, types=tower_types))
+    best_result = None
+    for make in candidates:
+        result = make()
         if best_result is None or rank(result) > rank(best_result):
             best_result = result
     _, buildings, bldg_area = best_result
@@ -1014,7 +1042,7 @@ with col_input:
     use_custom = st.checkbox("기타 평형 직접 입력", value=False)
     if use_custom:
         c_area = st.number_input("기타 평형 전용면적 (m²)", min_value=10, max_value=300, value=135,
-                                 help="판상형·탑상형(3호·4호)을 기본 평형과 같은 산정식으로 자동 생성합니다.")
+                                 help="판상형·탑상형(3호·4호·5호)을 기본 평형과 같은 산정식으로 자동 생성합니다.")
         if f"{c_area}m²" in {k.split("(")[0] for k in UNIT_TYPES}:
             st.warning(f"{c_area}m²는 기본 평형에 있습니다. 위 체크박스를 사용하세요.")
             use_custom = False
@@ -1056,24 +1084,19 @@ with col_input:
 
     # ------------------------------------------------------------------
     st.header("4. 동 형태")
-    STYLE_OPTIONS = {
-        "AI 자동": None,
-        "판상형": AUTO_COMBOS["판상형"],
-        "탑상형": AUTO_COMBOS["탑상형"],
-        "혼합": AUTO_COMBOS["혼합"],
-    }
-    layout_style = st.radio("배치할 동 형태", list(STYLE_OPTIONS.keys()), horizontal=True,
-                            help="· AI 자동: 판상형·탑상형·혼합 3가지 안을 모두 계산해 세대수가 가장 많은 안을 채택\n"
-                                 "· 판상형: 남향 판상동(계단식 4호·복도식 4세대)을 열로 배치. 이론상 최대치 확인용\n"
-                                 "· 탑상형: 탑상 3호·4호 위주. 조망 중심\n"
-                                 "· 혼합: 판상형 열 배치에 탑상동(3호·4호)을 섞음. 실제 사업에 가까운 안\n\n"
-                                 "※ 탑상 4호는 계단식 평형(55\\~114m²)과 기타 평형에서만 생성됩니다.")
-    style_groups = STYLE_OPTIONS[layout_style]
-    is_auto_style = style_groups is None
-    min_tower_pct = st.number_input("탑상형 최소 비율 (세대수 기준, %)", min_value=0, max_value=100, value=0, step=5,
-                                    help="기본 0% = 제한 없음 (세대수 최대 기준). 법정 비율은 없고, 지구단위계획·심의에서 비율을 요구하는 사업지만 입력하세요.\n\n"
-                                         "· 입력하면 전체 세대 중 탑상동(3호·4호) 세대가 이 비율 이상이어야 하며, 혼합안은 비율을 채울 때까지 탑상동을 먼저 배치\n"
-                                         "· 비율에 못 미치는 안은 비교표에 '참고용'으로만 표시하고 AI 자동에서 채택하지 않음")
+    # 배치도에 그릴 안. 세 안은 항상 모두 계산해 비교표로 보여줌
+    STYLE_OPTIONS = {"혼합 (기본)": "혼합", "판상형": "판상형", "탑상형": "탑상형"}
+    layout_style = st.radio("배치도에 그릴 안", list(STYLE_OPTIONS.keys()), horizontal=True,
+                            help="세 안을 모두 계산해 비교표로 보여주고, 여기서 고른 안을 배치도에 그립니다.\n\n"
+                                 "· 혼합 (기본): 판상동과 탑상동을 모두 써서 세대수가 가장 많은 배치. 판상형안·탑상형안보다 세대수가 적게 나오지 않음\n"
+                                 "· 판상형: 남향 판상동(계단식 4호·복도식 4세대)만 열로 배치\n"
+                                 "· 탑상형: 탑상 3호·4호·5호(2+3, 출입구 2개)만 배치\n\n"
+                                 "※ 탑상 4호·5호는 계단식 평형(55\\~114m²)과 기타 평형에서만 생성됩니다.")
+    plan_key = STYLE_OPTIONS[layout_style]
+    min_tower_pct = st.number_input("탑상형 최소 비율 (세대수 기준, %)", min_value=0, max_value=100, value=50, step=5,
+                                    help="기본 50% (요즘 단지 구성 기준). 법정 비율은 없으므로 세대수 최대를 보려면 0%로 바꾸세요. 지구단위계획·심의에서 비율을 정한 사업지는 그 값을 입력하세요.\n\n"
+                                         "· 입력하면 전체 세대 중 탑상동 세대가 이 비율 이상이어야 하며, 혼합안은 비율을 채울 때까지 탑상동을 먼저 배치\n"
+                                         "· 비율에 못 미치는 안은 비교표에 '참고용'으로 표시")
     if min_tower_pct == 0:
         st.caption("※ 세대수 최대 기준입니다. 판상형 일색 배치는 건축·경관 심의에서 형태 다양화(탑상동 혼합)를 요구받을 수 있으니 비교표의 혼합·탑상형 안도 함께 참고하세요.")
     min_tower_ratio = min_tower_pct / 100.0
@@ -1112,20 +1135,26 @@ with col_viz:
         flip_h, flip_v, str(eff), min_tower_pct
     )
 
+    def run_layout(groups, floors_limit=None):
+        # 탑상형 최소 비율은 판상과 탑상이 섞이는 안에만 의미가 있음 (나머지는 0으로 캐시 공유)
+        mixes = "판상" in groups and any(g != "판상" for g in groups)
+        return auto_optimize_layout(
+            site_w, site_l, site_shape_type, floors if floors_limit is None else floors_limit, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=trap_bottom, trap_top=trap_top, trap_height=trap_height, l_w=l_w, l_l=l_l, l_w_inner=l_w_inner, l_l_inner=l_l_inner, eff=eff, flip_h=flip_h, flip_v=flip_v, allowed_groups=tuple(groups), min_floors=min_floors,
+            min_tower_ratio=min_tower_ratio if mixes else 0.0)
+
+    def count_units(blds):
+        return sum(b[5] * b[4] for b in blds)
+
+    def far_of(blds, s_area):
+        """용적률(%) = 공급면적 합 ÷ 대지면적"""
+        return sum(type_area_breakdown(b[7], eff)[1] * b[4] for b in blds) / s_area * 100 if s_area > 0 else 0.0
+
     calc_btn = st.button("🚀 배치 계산", type="primary", width="stretch")
 
     if calc_btn:
         st.session_state['last_inputs'] = inputs_tuple
+        st.session_state.pop('far_search', None)
         with st.spinner("판상형·탑상형·혼합 3가지 안을 계산하고 있습니다... (대지 크기·학교 조건에 따라 수십 초\\~2분)"):
-            def run_layout(groups):
-                # 탑상형 최소 비율은 판상과 탑상이 섞이는 안에만 의미가 있음 (나머지는 0으로 캐시 공유)
-                mixes = "판상" in groups and any(g != "판상" for g in groups)
-                return auto_optimize_layout(
-                    site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=trap_bottom, trap_top=trap_top, trap_height=trap_height, l_w=l_w, l_l=l_l, l_w_inner=l_w_inner, l_l_inner=l_l_inner, eff=eff, flip_h=flip_h, flip_v=flip_v, allowed_groups=tuple(groups), min_floors=min_floors,
-                    min_tower_ratio=min_tower_ratio if mixes else 0.0)
-
-            def count_units(blds):
-                return sum(b[5] * b[4] for b in blds)
 
             def is_near_tie(a, b):
                 return max(a, b) > 0 and abs(a - b) / max(a, b) <= NEAR_TIE_RATIO
@@ -1152,37 +1181,28 @@ with col_viz:
             if min_tower_ratio > 0 and not any(meets.values()):
                 compare_txt = f"⚠️ 탑상형 {min_tower_pct}% 이상을 충족하는 안이 없어 세대수 기준으로 골랐습니다. 비율을 낮추거나 대지 조건을 확인하세요.\n\n" + compare_txt
 
-            if is_auto_style:
-                bldgs, s_area, b_area, base_site_poly = combo_results[best_style]
-                cond = f"탑상형 {min_tower_pct}% 이상을 충족하는 안 중 " if min_tower_ratio > 0 and any(meets.values()) else ""
-                msg = f"**AI 자동:** {cond}세대수가 가장 많은 **{best_style}안**을 채택했습니다.\n\n✅ **{best_comp} · {best_units:,}세대**"
-                # 채택안과 다른 배치 중 최고안이 3% 이내면 안내 (같은 구성·세대수는 같은 배치라 제외)
-                runner = next(((k, v) for k, v in ranked if k != best_style and meets[k] and (v, compositions[k]) != (best_units, best_comp)), None)
-                if runner and is_near_tie(best_units, runner[1]):
-                    msg += f"\n\n※ {runner[0]}안({runner[1]:,}세대)과 차이가 {NEAR_TIE_RATIO:.0%} 이내입니다. 선호하는 형태로 고르셔도 됩니다."
-                hint = ("success", msg + "\n\n" + compare_txt)
-            else:
-                bldgs, s_area, b_area, base_site_poly = run_layout(style_groups)
-                current_units = count_units(bldgs)
-                current_comp = describe_composition(bldgs)
-                cur_share = tower_share(bldgs)
-                head = f"**선택한 {layout_style}안:** {current_comp} · {current_units:,}세대"
-                if min_tower_ratio > 0 and current_units > 0 and cur_share < min_tower_ratio - RATIO_TOL:
-                    if any(meets.values()):
-                        tail = f"⚠️ 탑상형 {cur_share:.0%}로 기준 {min_tower_pct}%에 미달합니다 (참고용). 기준을 충족하는 최대안은 **{best_style}안 {best_units:,}세대**입니다."
-                    else:
-                        tail = f"⚠️ 탑상형 {cur_share:.0%}로 기준 {min_tower_pct}%에 미달하고, 기준을 충족하는 안이 없습니다."
-                    hint = ("warning", f"{head}\n\n{tail}\n\n{compare_txt}")
-                elif best_units > current_units and not is_near_tie(best_units, current_units):
-                    hint = ("warning", f"{head}\n\n💡 **{best_style}안**({best_comp})으로 바꾸면 **{best_units:,}세대 (+{best_units - current_units:,})**까지 가능합니다. 'AI 자동'을 고르면 자동 적용됩니다.\n\n{compare_txt}")
-                elif best_units > current_units:
-                    hint = ("info", f"{head}\n\n최대안({best_style}안 {best_units:,}세대)과 차이가 {NEAR_TIE_RATIO:.0%} 이내라 사실상 최대입니다.\n\n{compare_txt}")
+            bldgs, s_area, b_area, base_site_poly = combo_results[plan_key]
+            current_units = count_units(bldgs)
+            current_comp = describe_composition(bldgs)
+            cur_share = tower_share(bldgs)
+            head = f"**{plan_key}안:** {current_comp} · {current_units:,}세대"
+            if min_tower_ratio > 0 and current_units > 0 and cur_share < min_tower_ratio - RATIO_TOL:
+                if any(meets.values()):
+                    tail = f"⚠️ 탑상형 {cur_share:.0%}로 기준 {min_tower_pct}%에 미달합니다 (참고용). 기준을 충족하는 최대안은 **{best_style}안 {best_units:,}세대**입니다."
                 else:
-                    scope = "탑상형 기준을 충족하는 안 중" if min_tower_ratio > 0 and any(meets.values()) else "비교한 안 중"
-                    hint = ("success", f"{head}\n\n✅ {scope} 세대수가 가장 많습니다.\n\n{compare_txt}")
+                    tail = f"⚠️ 탑상형 {cur_share:.0%}로 기준 {min_tower_pct}%에 미달하고, 기준을 충족하는 안이 없습니다."
+                hint = ("warning", f"{head}\n\n{tail}\n\n{compare_txt}")
+            elif best_units > current_units and not is_near_tie(best_units, current_units):
+                hint = ("warning", f"{head}\n\n💡 **{best_style}안**({best_comp})이 **{best_units:,}세대 (+{best_units - current_units:,})**로 더 많습니다. '혼합 (기본)'을 고르면 최대안을 볼 수 있습니다.\n\n{compare_txt}")
+            elif best_units > current_units:
+                hint = ("info", f"{head}\n\n최대안({best_style}안 {best_units:,}세대)과 차이가 {NEAR_TIE_RATIO:.0%} 이내라 사실상 최대입니다.\n\n{compare_txt}")
+            else:
+                scope = "탑상형 기준을 충족하는 안 중" if min_tower_ratio > 0 and any(meets.values()) else "비교한 안 중"
+                hint = ("success", f"{head}\n\n✅ {scope} 세대수가 가장 많습니다.\n\n{compare_txt}")
 
             st.session_state['sim_result'] = (bldgs, s_area, b_area, base_site_poly)
             st.session_state['hint'] = hint
+            st.session_state['shown_plan'] = plan_key
 
     if 'last_inputs' in st.session_state and st.session_state['last_inputs'] != inputs_tuple:
         st.warning("입력값이 바뀌었습니다. '🚀 배치 계산'을 다시 눌러주세요.")
@@ -1195,10 +1215,92 @@ with col_viz:
     buildings, site_area, bldg_area, base_site_poly = st.session_state['sim_result']
 
     result_box = st.container()
+    far_box = st.container()
     plot_box = st.container()
     shadow_box = st.container()
     override_box = st.container()
     area_box = st.container()
+
+    # ------------------------------------------------------------------
+    # 용적률 상한 달성 층수 역산: 층수 제한만 올려 가며 다시 계산
+    # ------------------------------------------------------------------
+    FAR_SEARCH_MAX_FLOORS = 100     # 층수 입력 상한과 동일
+    FAR_REACH_RATIO = 0.98          # 상한의 98% 이상이면 달성으로 봄 (동 단위 배치라 딱 맞추기 어려움)
+    with far_box:
+        plan_now = st.session_state.get('shown_plan', '혼합')
+        with st.expander(f"🎯 용적률 상한({max_far}%) 달성에 필요한 층수 찾기", expanded='far_search' in st.session_state):
+            st.caption(f"다른 조건은 그대로 두고 **최고 층수만 올려 가며** '{plan_now}안'을 다시 계산해, 용적률 상한에 닿는 최저 층수를 찾습니다 "
+                       f"(동 단위로 배치해 딱 맞추기 어려우므로 상한의 {FAR_REACH_RATIO:.0%} 이상이면 달성으로 봅니다). "
+                       f"여러 번 계산하므로 수 분 걸릴 수 있습니다. 결과는 시뮬레이터 기준이며, 실제 층수 상향 가능 여부는 지구단위계획·고도제한으로 확인하세요.")
+            if st.button("🎯 필요 층수 계산", key="far_search_btn"):
+                groups = AUTO_COMBOS[plan_now]
+                target = max_far * FAR_REACH_RATIO
+                tried = {}
+                prog = st.progress(0.0, text="계산 준비 중...")
+
+                def evaluate(fl):
+                    if fl not in tried:
+                        prog.progress(min(0.95, len(tried) / 10.0), text=f"{fl}층 제한으로 계산 중... ({len(tried) + 1}번째)")
+                        res = run_layout(groups, floors_limit=fl)
+                        tried[fl] = (far_of(res[0], res[1]), count_units(res[0]))
+                    return tried[fl][0]
+
+                f_start = int(floors)
+                answer, lo, status = None, f_start, ""
+                if evaluate(f_start) >= target:
+                    answer, status = f_start, "already"
+                else:
+                    # 5층씩 올려 상한에 닿는 구간을 찾고, 용적률이 더 오르지 않으면(3번 연속 +1%p 미만) 한계로 판단
+                    # (판상형 열 배치는 층수가 열 간격과 맞물려 몇 단계 정체 후 뛰는 경우가 있어 3번까지 봄)
+                    best_far, stall, f = tried[f_start][0], 0, f_start
+                    while f < FAR_SEARCH_MAX_FLOORS:
+                        f = min(FAR_SEARCH_MAX_FLOORS, f + 5)
+                        far_f = evaluate(f)
+                        if far_f >= target:
+                            answer = f
+                            break
+                        lo = f
+                        if far_f > best_far + 1.0:
+                            best_far, stall = far_f, 0
+                        else:
+                            stall += 1
+                            if stall >= 3:
+                                break
+                    if answer is not None:
+                        # 직전 미달 층수와 달성 층수 사이를 이진 탐색해 최저 층수 확정
+                        hi = answer
+                        while hi - lo > 1:
+                            mid = (lo + hi) // 2
+                            if evaluate(mid) >= target:
+                                hi = mid
+                            else:
+                                lo = mid
+                        answer, status = hi, "found"
+                    else:
+                        status = "limit"
+                prog.empty()
+                st.session_state['far_search'] = {"plan": plan_now, "max_far": max_far, "start": f_start,
+                                                  "answer": answer, "status": status, "tried": tried}
+
+            fs = st.session_state.get('far_search')
+            if fs:
+                best_fl = max(fs["tried"], key=lambda k: fs["tried"][k][0])
+                if fs["status"] == "already":
+                    st.success(f"현재 최고 층수 {fs['start']}층으로 이미 용적률 상한({fs['max_far']}%)에 닿습니다.")
+                elif fs["status"] == "found":
+                    far_a, units_a = fs["tried"][fs["answer"]]
+                    st.success(f"**{fs['plan']}안은 최고 층수 {fs['answer']}층**이면 용적률 상한 {fs['max_far']}%에 닿습니다 "
+                               f"(용적률 {far_a:.1f}%, {units_a:,}세대). 현재 {fs['start']}층 대비 **+{fs['answer'] - fs['start']}층**.\n\n"
+                               f"이 배치를 보려면 왼쪽 '최고 층수'를 {fs['answer']}층으로 바꾸고 다시 계산하세요.")
+                else:
+                    far_b, units_b = fs["tried"][best_fl]
+                    st.warning(f"**층수를 올려도 용적률 상한 {fs['max_far']}%에 닿지 않습니다.** {fs['plan']}안의 최대는 "
+                               f"{best_fl}층 제한에서 용적률 {far_b:.1f}% ({units_b:,}세대)입니다. "
+                               f"층수가 높아질수록 인동간격(0.8H)·일조 사선 이격도 커져서, 대지 크기가 한계가 됩니다. "
+                               f"건폐율 상한·탑상형 비율·대지 조건을 함께 검토하세요.")
+                st.dataframe(pd.DataFrame([{"층수 제한": k, "용적률 (%)": round(v[0], 1), "세대수": v[1]}
+                                           for k, v in sorted(fs["tried"].items())]),
+                             hide_index=True, width="stretch")
 
     with shadow_box:
         col_s1, col_s2 = st.columns([1, 3])
@@ -1285,6 +1387,11 @@ with col_viz:
             st.markdown("  \n".join(notes))
 
     with plot_box:
+        # 비교표에는 모든 안이 나오지만 배치도는 채택(또는 선택)한 안 하나만 그림 → 어느 안인지 명시
+        if st.session_state.get('shown_plan'):
+            st.markdown(f"🗺️ **배치도: {st.session_state['shown_plan']}안** — {describe_composition(final_buildings)} · {total_units:,}세대  \n"
+                        "<span style='color:gray;font-size:0.9em'>다른 안의 배치를 보려면 '4. 동 형태'에서 해당 안을 고르고 다시 계산하세요.</span>",
+                        unsafe_allow_html=True)
         azimuth_deg, altitude_deg = get_solar_angle(time_of_day)
         fig = go.Figure()
         site_poly = base_site_poly.buffer(-setback_x)
