@@ -111,13 +111,15 @@ def get_base_dividers(b_w, b_l, bldg_shape, units):
             x = i * (b_w / units)
             dividers.append(((x, 0), (x, b_l)))
     elif bldg_shape in ["타워형", "L자형"]:
+        # 탑상 3호: 세 세대 면적이 같도록 구획 (가로 날개 끝 1세대 / 모서리 1세대 / 세로 날개 끝 1세대)
         t = b_w / 3.0
-        dividers.append(((t, 0), (t, t)))
-        dividers.append(((0, t), (t, t)))
-        if units >= 4:
-            dividers.append(((t*2, 0), (t*2, t)))
-        if units >= 5:
-            dividers.append(((0, t*2), (t, t*2)))
+        unit_len = create_building_poly(b_w, b_l, bldg_shape).area / 3.0 / t
+        xa = b_w - unit_len          # 가로 날개 끝 세대 경계
+        yc = b_l - unit_len          # 세로 날개 끝 세대 경계
+        dividers.append(((xa, 0), (xa, t)))
+        dividers.append(((0, yc), (t, yc)))
+        if yc < t:                   # 세로 날개가 짧아 끝 세대가 모서리까지 내려오는 경우
+            dividers.append(((t, yc), (t, t)))
     return dividers
 
 def create_building_poly(b_w, b_l, bldg_shape):
@@ -230,8 +232,9 @@ def build_composite_types(unit_types, composite_geom):
         W = 2 * u_t + t / 2.0
         poly4 = Polygon([(0, 0), (W, 0), (W, t), (t, t), (t, W), (0, W)])
         win4 = [(0, 0, W, 0, 0, -1), (0, 0, 0, W, -1, 0)]
-        ym = t + (W - t) / 2.0
-        div4 = [((W / 2.0, 0), (W / 2.0, t)), ((0, t), (t, t)), ((0, ym), (t, ym))]
+        # 네 세대 면적이 같도록 구획: 두 날개 끝 세대 + 모서리를 반씩 나눈 두 세대
+        div4 = [((W - u_t, 0), (W - u_t, t)), ((0, W - u_t), (t, W - u_t)),
+                ((t / 2.0, 0), (t / 2.0, t)), ((t / 2.0, t), (t, t))]
         n4 = f"{size_label}(탑상4호)"
         unit_types[n4] = (W, W, 4, area, "탑상4호")
         fac4 = [(t, t, W, t, 0, 1), (t, t, t, W, 1, 0)]
@@ -240,20 +243,34 @@ def build_composite_types(unit_types, composite_geom):
         # 2) 판탑 혼합동 : 판상 n세대(남측 날개) + 탑상 2세대(꺾인 날개)
         #    2+2(4호 조합, 모서리 코어 1개 또는 코어 2개)와 3+2(5호 조합, 판상 2세대 코어 + 모서리 3호 코어)
         #    5호 이상은 경기도 주택조례 동 길이 60m 이하 적용 → 외곽 긴 변 기준으로 판정
+        #    판상 날개는 정남향, 탑상 날개는 판상 날개 서쪽 끝에서 북서쪽으로 45° 꺾여 남서향 창을 가짐
+        #    (탑상 날개를 직각으로 꺾으면 창이 정서향이 되어 서향 금지 기준에 걸림)
+        r2 = math.sqrt(0.5)
+        ax, ay = -r2, r2                     # 탑상 날개 길이 방향 (북서)
         for n_plate, n_tower in PANTOP_COMBOS:
             LA = n_plate * pw
-            LB = pd + n_tower * u_t
-            if not plate_length_ok(n_plate + n_tower, max(LA, LB)):
+            if LA < math.sqrt(2) * t or pd < r2 * t:
+                continue                     # 날개를 붙일 판상 날개가 너무 짧거나 얕음
+            # 날개 밑동이 판상 날개와 겹치는 삼각형(t²/2)만큼 날개를 늘려 세대 면적을 맞춤
+            L_t = n_tower * u_t + t / 2.0
+            sw0 = (r2 * t, pd - r2 * t)                     # 날개 남서면 시작점 (판상 날개 안쪽)
+            ne0 = (math.sqrt(2) * t, pd)                     # 날개 북동면 시작점 (판상 날개 북측면 위)
+            sw1 = (sw0[0] + ax * L_t, sw0[1] + ay * L_t)
+            ne1 = (ne0[0] + ax * L_t, ne0[1] + ay * L_t)
+            poly_m = Polygon([(0, 0), (LA, 0), (LA, pd), ne0, ne1, sw1, (0, pd)])
+            minx_m, miny_m, maxx_m, maxy_m = poly_m.bounds
+            if not plate_length_ok(n_plate + n_tower, max(maxx_m - minx_m, maxy_m - miny_m)):
                 continue
-            poly_m = Polygon([(0, 0), (LA, 0), (LA, pd), (t, pd), (t, LB), (0, LB)])
-            win_m = [(k * pw, 0, (k + 1) * pw, 0, 0, -1) for k in range(n_plate)] + [(0, pd, 0, LB, -1, 0)]
-            div_m = [((k * pw, 0), (k * pw, pd)) for k in range(1, n_plate)] + [((0, pd), (t, pd))]
-            for k in range(1, n_tower):
-                yk = pd + k * u_t
-                div_m.append(((0, yk), (t, yk)))
+            win_m = [(k * pw, 0, (k + 1) * pw, 0, 0, -1) for k in range(n_plate)]
+            win_m.append((0, pd, sw1[0], sw1[1], -r2, -r2))  # 탑상 날개 남서향 창 (판상 날개 밖 부분)
+            div_m = [((k * pw, 0), (k * pw, pd)) for k in range(1, n_plate)] + [((0, pd), ne0)]
+            for k in range(1, n_tower):                       # 탑상 세대 경계 (날개 길이 방향 등분)
+                s = k * u_t + t / 2.0
+                p = (sw0[0] + ax * s, sw0[1] + ay * s)
+                div_m.append(((p[0] - r2 * 0.01, p[1] - r2 * 0.01), (p[0] + r2 * (t + 0.01), p[1] + r2 * (t + 0.01))))
             nm = f"{size_label}(판탑{n_plate}+{n_tower})"
-            unit_types[nm] = (LA, LB, n_plate + n_tower, area, "판탑형")
-            fac_m = [(t, pd, LA, pd, 0, 1), (t, pd, t, LB, 1, 0)]
+            unit_types[nm] = (maxx_m - minx_m, maxy_m - miny_m, n_plate + n_tower, area, "판탑형")
+            fac_m = [(ne0[0], pd, LA, pd, 0, 1), (ne0[0], ne0[1], ne1[0], ne1[1], r2, r2)]
             composite_geom[nm] = (poly_m, win_m, div_m, fac_m)
 
 build_composite_types(UNIT_TYPES, COMPOSITE_GEOM)
@@ -376,7 +393,7 @@ def _proj(w, dist):
     return Polygon([(wx1, wy1), (wx2, wy2), (wx2 + dx * dist, wy2 + dy * dist), (wx1 + dx * dist, wy1 + dy * dist)])
 
 @st.cache_data(show_spinner=False)
-def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=0, trap_top=0, trap_height=0, l_w=0, l_l=0, l_w_inner=0, l_l_inner=0, eff=DEFAULT_EFF, layout_version=29, flip_h=False, flip_v=False, plate_only=False, tower_only=False, allowed_groups=None, min_floors=5, n_trials=N_TRIALS, min_tower_ratio=0.0):
+def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=0, trap_top=0, trap_height=0, l_w=0, l_l=0, l_w_inner=0, l_l_inner=0, eff=DEFAULT_EFF, layout_version=30, flip_h=False, flip_v=False, plate_only=False, tower_only=False, allowed_groups=None, min_floors=5, n_trials=N_TRIALS, min_tower_ratio=0.0):
 
     if site_shape_type == "직사각형":
         base_site_poly = Polygon([(0,0), (site_w,0), (site_w,site_l), (0,site_l)])
