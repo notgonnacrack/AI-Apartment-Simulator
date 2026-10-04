@@ -83,10 +83,6 @@ def get_type_color(name):
         l, s = 0.50, 0.85
     elif "탑상4호" in name:
         l, s = 0.40, 0.90
-    elif "판탑2+2" in name:
-        l, s = 0.55, 0.45
-    elif "판탑3+2" in name:
-        l, s = 0.45, 0.45
     else:
         l, s = 0.5, 0.7
         
@@ -176,7 +172,7 @@ def is_valid_orientation(windows):
     return True
 
 # ==========================================================
-# 복합 동 타입 자동 생성 (탑상 4호 / 판탑 혼합동)
+# 복합 동 타입 자동 생성 (탑상 4호)
 # - 같은 평형의 판상형(계단식) 모듈과 탑상형(L자) 모듈을 그대로 재사용해서
 #   세대당 바닥면적이 기존 타입과 동일하게 유지되도록 조립합니다.
 # ==========================================================
@@ -192,7 +188,6 @@ for key in list(UNIT_TYPES.keys()):
             UNIT_TYPES[tower_key1] = (*tower_dims(area), 3, area, "L자형")
 
 COMPOSITE_GEOM = {}  # name -> (poly, windows, dividers, facades)
-PANTOP_COMBOS = ((2, 2), (3, 2))  # 판탑 혼합동 (판상 세대수, 탑상 세대수)
 
 # 경기도 주택조례 제5조제1호: 판상형은 4호연립 이하로 계획하거나 1개동 길이 60m 이하
 # (150세대 미만 재건축·테라스형·4층 이하 예외, 지구단위계획·건축위원회가 달리 정하면 그에 따름)
@@ -201,10 +196,6 @@ PLATE_MAX_LENGTH = 60.0
 
 def plate_length_ok(units, length):
     return units <= PLATE_MAX_UNITS or length <= PLATE_MAX_LENGTH
-
-def pantop_plate_units(name):
-    """'84m²(판탑3+2)' → 3 (판상 날개 세대수)"""
-    return int(name.split("판탑")[1].split("+")[0])
 
 def build_composite_types(unit_types, composite_geom):
     by_size = {}
@@ -239,39 +230,8 @@ def build_composite_types(unit_types, composite_geom):
         unit_types[n4] = (W, W, 4, area, "탑상4호")
         fac4 = [(t, t, W, t, 0, 1), (t, t, t, W, 1, 0)]
         composite_geom[n4] = (poly4, win4, div4, fac4)
-
-        # 2) 판탑 혼합동 : 판상 n세대(남측 날개) + 탑상 2세대(꺾인 날개)
-        #    2+2(4호 조합, 모서리 코어 1개 또는 코어 2개)와 3+2(5호 조합, 판상 2세대 코어 + 모서리 3호 코어)
-        #    5호 이상은 경기도 주택조례 동 길이 60m 이하 적용 → 외곽 긴 변 기준으로 판정
-        #    판상 날개는 정남향, 탑상 날개는 판상 날개 서쪽 끝에서 북서쪽으로 45° 꺾여 남서향 창을 가짐
-        #    (탑상 날개를 직각으로 꺾으면 창이 정서향이 되어 서향 금지 기준에 걸림)
-        r2 = math.sqrt(0.5)
-        ax, ay = -r2, r2                     # 탑상 날개 길이 방향 (북서)
-        for n_plate, n_tower in PANTOP_COMBOS:
-            LA = n_plate * pw
-            if LA < math.sqrt(2) * t or pd < r2 * t:
-                continue                     # 날개를 붙일 판상 날개가 너무 짧거나 얕음
-            # 날개 밑동이 판상 날개와 겹치는 삼각형(t²/2)만큼 날개를 늘려 세대 면적을 맞춤
-            L_t = n_tower * u_t + t / 2.0
-            sw0 = (r2 * t, pd - r2 * t)                     # 날개 남서면 시작점 (판상 날개 안쪽)
-            ne0 = (math.sqrt(2) * t, pd)                     # 날개 북동면 시작점 (판상 날개 북측면 위)
-            sw1 = (sw0[0] + ax * L_t, sw0[1] + ay * L_t)
-            ne1 = (ne0[0] + ax * L_t, ne0[1] + ay * L_t)
-            poly_m = Polygon([(0, 0), (LA, 0), (LA, pd), ne0, ne1, sw1, (0, pd)])
-            minx_m, miny_m, maxx_m, maxy_m = poly_m.bounds
-            if not plate_length_ok(n_plate + n_tower, max(maxx_m - minx_m, maxy_m - miny_m)):
-                continue
-            win_m = [(k * pw, 0, (k + 1) * pw, 0, 0, -1) for k in range(n_plate)]
-            win_m.append((0, pd, sw1[0], sw1[1], -r2, -r2))  # 탑상 날개 남서향 창 (판상 날개 밖 부분)
-            div_m = [((k * pw, 0), (k * pw, pd)) for k in range(1, n_plate)] + [((0, pd), ne0)]
-            for k in range(1, n_tower):                       # 탑상 세대 경계 (날개 길이 방향 등분)
-                s = k * u_t + t / 2.0
-                p = (sw0[0] + ax * s, sw0[1] + ay * s)
-                div_m.append(((p[0] - r2 * 0.01, p[1] - r2 * 0.01), (p[0] + r2 * (t + 0.01), p[1] + r2 * (t + 0.01))))
-            nm = f"{size_label}(판탑{n_plate}+{n_tower})"
-            unit_types[nm] = (maxx_m - minx_m, maxy_m - miny_m, n_plate + n_tower, area, "판탑형")
-            fac_m = [(ne0[0], pd, LA, pd, 0, 1), (ne0[0], ne0[1], ne1[0], ne1[1], r2, r2)]
-            composite_geom[nm] = (poly_m, win_m, div_m, fac_m)
+        # ※ 판탑 혼합동은 2026-10-04 제거: 45° 회전 배치에서는 탑상 4호와 면적·세대수·방향이 같아
+        #   가배치 단계에서 구분 실익이 없음 (사용자 결정)
 
 build_composite_types(UNIT_TYPES, COMPOSITE_GEOM)
 
@@ -279,7 +239,6 @@ def get_type_group(name, shape, units):
     if shape == "판상형": return "판상"
     if shape == "L자형": return "탑상3"
     if shape == "탑상4호": return "탑상4"
-    if shape == "판탑형": return f"판탑{units}"
     return "기타"
 
 # ==========================================================
@@ -300,30 +259,25 @@ def type_area_breakdown(name, eff=DEFAULT_EFF):
         supply = area / e * units
     elif shape in ("L자형", "탑상4호"):
         supply = area / e_tower * units
-    elif shape == "판탑형":
-        n_plate = pantop_plate_units(name)
-        supply = area / e_stair * n_plate + area / e_tower * (units - n_plate)
     else:
         supply = area / e_stair * units
     return area * units, supply
 
-ALL_GROUPS = ("판상", "탑상3", "탑상4", "판탑4", "판탑5")
+ALL_GROUPS = ("판상", "탑상3", "탑상4")
 # AI 자동 모드에서 비교하는 조합들
 AUTO_COMBOS = {
     "판상형": ("판상",),
     "탑상형": ("탑상3", "탑상4"),
     "혼합": ALL_GROUPS,
 }
-GROUP_LABELS = {"판상": "판상형", "탑상3": "탑상 3호", "탑상4": "탑상 4호", "판탑4": "판탑 2+2", "판탑5": "판탑 3+2"}
-# 조합 간 세대수 차이가 이 비율 이내면 '사실상 같음'으로 안내 (탑상·판탑 그리디 배치의 무작위 편차 수준)
+GROUP_LABELS = {"판상": "판상형", "탑상3": "탑상 3호", "탑상4": "탑상 4호"}
+# 조합 간 세대수 차이가 이 비율 이내면 '사실상 같음'으로 안내 (탑상동 그리디 배치의 무작위 편차 수준)
 NEAR_TIE_RATIO = 0.03
 
 def tower_units_of(name, shape, units):
-    """층당 탑상형 세대수: 탑상 3호·4호는 전부, 판탑 혼합동은 꺾인 탑상 날개 세대만"""
+    """층당 탑상형 세대수: 탑상 3호·4호 동은 전 세대가 탑상형"""
     if shape in ("L자형", "탑상4호"):
         return units
-    if shape == "판탑형":
-        return units - pantop_plate_units(name)
     return 0
 
 def tower_share(blds):
@@ -334,7 +288,7 @@ def tower_share(blds):
     return sum(tower_units_of(b[7], b[1], b[5]) * b[4] for b in blds) / total
 
 def type_label(name):
-    """화면 표시용 동 타입 이름. 예: '84m²(판탑3+2)' → '84m² 판탑 3+2', '26m²(복도식)' → '26m² 판상형(복도식)'"""
+    """화면 표시용 동 타입 이름. 예: '84m²(탑상4호)' → '84m² 탑상 4호', '26m²(복도식)' → '26m² 판상형(복도식)'"""
     _, _, units, _, shape = UNIT_TYPES[name]
     label = GROUP_LABELS.get(get_type_group(name, shape, units), shape)
     if "복도식" in name:
@@ -342,7 +296,7 @@ def type_label(name):
     return f"{name.split('(')[0]} {label}"
 
 def describe_composition(blds):
-    """조합 이름(허용 형태)이 아니라 실제로 배치된 동 형태로 구성 문자열 생성. 예: '판상형 13동 + 판탑 2+2 1동'"""
+    """조합 이름(허용 형태)이 아니라 실제로 배치된 동 형태로 구성 문자열 생성. 예: '판상형 13동 + 탑상 4호 1동'"""
     counts = {}
     for b in blds:
         g = get_type_group(b[7], b[1], b[5])
@@ -393,7 +347,7 @@ def _proj(w, dist):
     return Polygon([(wx1, wy1), (wx2, wy2), (wx2 + dx * dist, wy2 + dy * dist), (wx1 + dx * dist, wy1 + dy * dist)])
 
 @st.cache_data(show_spinner=False)
-def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=0, trap_top=0, trap_height=0, l_w=0, l_l=0, l_w_inner=0, l_l_inner=0, eff=DEFAULT_EFF, layout_version=30, flip_h=False, flip_v=False, plate_only=False, tower_only=False, allowed_groups=None, min_floors=5, n_trials=N_TRIALS, min_tower_ratio=0.0):
+def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=0, trap_top=0, trap_height=0, l_w=0, l_l=0, l_w_inner=0, l_l_inner=0, eff=DEFAULT_EFF, layout_version=32, flip_h=False, flip_v=False, plate_only=False, tower_only=False, allowed_groups=None, min_floors=5, n_trials=N_TRIALS, min_tower_ratio=0.0):
 
     if site_shape_type == "직사각형":
         base_site_poly = Polygon([(0,0), (site_w,0), (site_w,site_l), (0,site_l)])
@@ -614,7 +568,7 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
 
         for (x, y) in pts:
             total_u = sum(placed_counts.values())
-            # 탑상형 최소 비율 미달이면 판상형(탑상 세대 없는 동)은 이 자리에 넣지 않음 → 탑상·판탑부터 채움
+            # 탑상형 최소 비율 미달이면 판상형(탑상 세대 없는 동)은 이 자리에 넣지 않음 → 탑상동부터 채움
             tower_short = min_tower_ratio > 0 and (total_u == 0 or tower_u / total_u < min_tower_ratio)
 
             def get_priority(t):
@@ -1017,7 +971,7 @@ with col_input:
     col_far, col_bcr = st.columns(2)
     max_far = col_far.number_input("용적률 상한 (%)", min_value=50, max_value=1000, value=300, step=10)
     max_bcr = col_bcr.number_input("건폐율 상한 (%)", min_value=10, max_value=100, value=20, step=2,
-                                   help="법정 최대(예: 60%)까지 채우면 동이 촘촘해져 사선·인동간격 때문에 오히려 층수가 깎입니다. 20~25% 정도가 세대수에 유리합니다.")
+                                   help="법정 최대(예: 60%)까지 채우면 동이 촘촘해져 사선·인동간격 때문에 오히려 층수가 깎입니다. 20\\~25% 정도가 세대수에 유리합니다.")
     limit_floors = st.checkbox("층수 제한 있음", value=True)
     col_fl1, col_fl2 = st.columns(2)
     if limit_floors:
@@ -1060,7 +1014,7 @@ with col_input:
     use_custom = st.checkbox("기타 평형 직접 입력", value=False)
     if use_custom:
         c_area = st.number_input("기타 평형 전용면적 (m²)", min_value=10, max_value=300, value=135,
-                                 help="판상형·탑상형·판탑 혼합동을 기본 평형과 같은 산정식으로 자동 생성합니다.")
+                                 help="판상형·탑상형(3호·4호)을 기본 평형과 같은 산정식으로 자동 생성합니다.")
         if f"{c_area}m²" in {k.split("(")[0] for k in UNIT_TYPES}:
             st.warning(f"{c_area}m²는 기본 평형에 있습니다. 위 체크박스를 사용하세요.")
             use_custom = False
@@ -1070,7 +1024,7 @@ with col_input:
             UNIT_TYPES[f"{c_area}m²(계단식)"] = (*plate_dims(c_area, 4, p_depth), 4, float(c_area), "판상형")
             # 탑상형(L자 3호)
             UNIT_TYPES[f"{c_area}m²(탑상형)"] = (*tower_dims(c_area), 3, float(c_area), "L자형")
-            # 탑상 4호 · 판탑 혼합동
+            # 탑상 4호
             build_composite_types(UNIT_TYPES, COMPOSITE_GEOM)
 
     selected_sizes = []
@@ -1112,15 +1066,16 @@ with col_input:
                             help="· AI 자동: 판상형·탑상형·혼합 3가지 안을 모두 계산해 세대수가 가장 많은 안을 채택\n"
                                  "· 판상형: 남향 판상동(계단식 4호·복도식 4세대)을 열로 배치. 이론상 최대치 확인용\n"
                                  "· 탑상형: 탑상 3호·4호 위주. 조망 중심\n"
-                                 "· 혼합: 판상형 열 배치에 탑상동·판탑 혼합동(2+2, 3+2)을 섞음. 실제 사업에 가까운 안\n\n"
-                                 "※ 탑상 4호·판탑 혼합동은 계단식 평형(55~114m²)과 기타 평형에서만 생성됩니다.")
+                                 "· 혼합: 판상형 열 배치에 탑상동(3호·4호)을 섞음. 실제 사업에 가까운 안\n\n"
+                                 "※ 탑상 4호는 계단식 평형(55\\~114m²)과 기타 평형에서만 생성됩니다.")
     style_groups = STYLE_OPTIONS[layout_style]
     is_auto_style = style_groups is None
-    min_tower_pct = st.number_input("탑상형 최소 비율 (세대수 기준, %)", min_value=0, max_value=100, value=30, step=5,
-                                    help="전체 세대 중 탑상형 세대가 이 비율 이상이어야 합니다. 판탑 혼합동은 꺾인 탑상 날개 세대만 셉니다.\n\n"
-                                         "· 혼합안은 비율을 채울 때까지 탑상동·판탑동을 먼저 배치\n"
-                                         "· 비율에 못 미치는 안은 비교표에 '참고용'으로만 표시하고 AI 자동에서 채택하지 않음\n\n"
-                                         "광명·시흥 조례에는 규정이 없고 보통 지구단위계획·심의에서 정합니다. 0이면 제한 없음.")
+    min_tower_pct = st.number_input("탑상형 최소 비율 (세대수 기준, %)", min_value=0, max_value=100, value=0, step=5,
+                                    help="기본 0% = 제한 없음 (세대수 최대 기준). 법정 비율은 없고, 지구단위계획·심의에서 비율을 요구하는 사업지만 입력하세요.\n\n"
+                                         "· 입력하면 전체 세대 중 탑상동(3호·4호) 세대가 이 비율 이상이어야 하며, 혼합안은 비율을 채울 때까지 탑상동을 먼저 배치\n"
+                                         "· 비율에 못 미치는 안은 비교표에 '참고용'으로만 표시하고 AI 자동에서 채택하지 않음")
+    if min_tower_pct == 0:
+        st.caption("※ 세대수 최대 기준입니다. 판상형 일색 배치는 건축·경관 심의에서 형태 다양화(탑상동 혼합)를 요구받을 수 있으니 비교표의 혼합·탑상형 안도 함께 참고하세요.")
     min_tower_ratio = min_tower_pct / 100.0
 
     # ------------------------------------------------------------------
@@ -1144,7 +1099,7 @@ with col_input:
 - **측벽 이격:** 측벽↔측벽 {side_dist:g} m, 측벽↔창 없는 벽면 8 m 이상
 - **대지 안의 공지:** 대지경계선에서 {setback_x:g} m
 - **동 규모:** 4호 이하이거나 1개동 길이 60 m 이하 (경기도 주택조례 제5조제1호, 꺾인 동은 외곽 긴 변 기준)
-- **학교 일조:** 동지 기준 학교 경계에 연속 2시간(09~15시) 또는 총 4시간(08~16시) 이상
+- **학교 일조:** 동지 기준 학교 경계에 연속 2시간(09\\~15시) 또는 총 4시간(08\\~16시) 이상
 """)
 
 
@@ -1161,7 +1116,7 @@ with col_viz:
 
     if calc_btn:
         st.session_state['last_inputs'] = inputs_tuple
-        with st.spinner("판상형·탑상형·혼합 3가지 안을 계산하고 있습니다... (대지 크기·학교 조건에 따라 수십 초~2분)"):
+        with st.spinner("판상형·탑상형·혼합 3가지 안을 계산하고 있습니다... (대지 크기·학교 조건에 따라 수십 초\\~2분)"):
             def run_layout(groups):
                 # 탑상형 최소 비율은 판상과 탑상이 섞이는 안에만 의미가 있음 (나머지는 0으로 캐시 공유)
                 mixes = "판상" in groups and any(g != "판상" for g in groups)
@@ -1376,13 +1331,7 @@ with col_viz:
             x, y = poly.exterior.xy
             hover_text = f"{idx+1}동 · {type_label(name)}<br>{b_floors}층 · 층당 {b_units}세대 (동 전체 {b_units * b_floors}세대)<br>인동간격 {b_ns_dist:.1f}m"
             fig.add_trace(go.Scatter(x=list(x), y=list(y), fill='toself', fillcolor=get_type_color(name), mode='lines', line=dict(color='#333333', width=1), text=hover_text, hoverinfo='text', showlegend=False))
-
-            div_x, div_y = [], []
-            for ((x1, y1), (x2, y2)) in dividers:
-                div_x.extend([x1, x2, None])
-                div_y.extend([y1, y2, None])
-            if div_x:
-                fig.add_trace(go.Scatter(x=div_x, y=div_y, mode='lines', line=dict(color='white', width=1.5), hoverinfo='skip', showlegend=False))
+            # 세대 구분선은 그리지 않음 (동 외곽만 표시, 세대 구성은 hover로 확인)
 
             for (wx1, wy1, wx2, wy2, dx, dy) in windows:
                 proj_poly = Polygon([(wx1, wy1), (wx2, wy2), (wx2 + dx * b_ns_dist, wy2 + dy * b_ns_dist), (wx1 + dx * b_ns_dist, wy1 + dy * b_ns_dist)])
