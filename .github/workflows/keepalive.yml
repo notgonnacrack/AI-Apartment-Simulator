@@ -1,0 +1,28 @@
+name: Keep Streamlit app awake
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"   # 6시간마다 (UTC 기준, 정각 혼잡을 피해 17분)
+  workflow_dispatch:          # Actions 탭에서 수동 실행
+  push:                       # 이 파일들을 고쳐 올리면 한 번 바로 실행 (동작 확인용)
+    paths:
+      - ".github/workflows/keepalive.yml"
+      - ".github/scripts/keepalive.py"
+
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Playwright
+        run: |
+          pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Visit app
+        env:
+          APP_URL: https://jinwoo-apt.streamlit.app/
+        run: python .github/scripts/keepalive.py

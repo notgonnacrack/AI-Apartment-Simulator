@@ -83,8 +83,6 @@ def get_type_color(name):
         l, s = 0.50, 0.85
     elif "탑상4호" in name:
         l, s = 0.40, 0.90
-    elif "탑상5호" in name:
-        l, s = 0.32, 0.90
     else:
         l, s = 0.5, 0.7
         
@@ -232,19 +230,6 @@ def build_composite_types(unit_types, composite_geom):
         unit_types[n4] = (W, W, 4, area, "탑상4호")
         fac4 = [(t, t, W, t, 0, 1), (t, t, t, W, 1, 0)]
         composite_geom[n4] = (poly4, win4, div4, fac4)
-
-        # 2) 탑상 5호 (2+3, 출입구 2개) : 한쪽 날개 2세대 코어 + 다른 쪽 날개 3세대 코어
-        #    세대당 면적은 탑상 3호와 동일. 날개 길이 = 세대수 × u_t + t/2 (모서리 몫)
-        WA = 2 * u_t + t / 2.0               # 2세대 날개 (가로)
-        WB = 3 * u_t + t / 2.0               # 3세대 날개 (세로)
-        poly5 = Polygon([(0, 0), (WA, 0), (WA, t), (t, t), (t, WB), (0, WB)])
-        win5 = [(0, 0, WA, 0, 0, -1), (0, 0, 0, WB, -1, 0)]
-        div5 = [((WA - u_t, 0), (WA - u_t, t)), ((t / 2.0, 0), (t / 2.0, t)), ((t / 2.0, t), (t, t)),
-                ((0, WB - u_t), (t, WB - u_t)), ((0, WB - 2 * u_t), (t, WB - 2 * u_t))]
-        n5 = f"{size_label}(탑상5호)"
-        unit_types[n5] = (WA, WB, 5, area, "탑상5호")
-        fac5 = [(t, t, WA, t, 0, 1), (t, t, t, WB, 1, 0)]
-        composite_geom[n5] = (poly5, win5, div5, fac5)
         # ※ 판탑 혼합동은 2026-10-04 제거: 45° 회전 배치에서는 탑상 4호와 면적·세대수·방향이 같아
         #   가배치 단계에서 구분 실익이 없음 (사용자 결정)
 
@@ -254,7 +239,6 @@ def get_type_group(name, shape, units):
     if shape == "판상형": return "판상"
     if shape == "L자형": return "탑상3"
     if shape == "탑상4호": return "탑상4"
-    if shape == "탑상5호": return "탑상5"
     return "기타"
 
 # ==========================================================
@@ -273,26 +257,26 @@ def type_area_breakdown(name, eff=DEFAULT_EFF):
     if shape == "판상형":
         e = e_corr if "복도식" in name else e_stair
         supply = area / e * units
-    elif shape in ("L자형", "탑상4호", "탑상5호"):
+    elif shape in ("L자형", "탑상4호"):
         supply = area / e_tower * units
     else:
         supply = area / e_stair * units
     return area * units, supply
 
-ALL_GROUPS = ("판상", "탑상3", "탑상4", "탑상5")
+ALL_GROUPS = ("판상", "탑상4")
 # 항상 계산해 비교하는 세 안 (혼합 = 판상형·탑상형 결과 이상이 보장되는 최대안)
 AUTO_COMBOS = {
     "판상형": ("판상",),
-    "탑상형": ("탑상3", "탑상4", "탑상5"),
+    "탑상형": ("탑상4",),
     "혼합": ALL_GROUPS,
 }
-GROUP_LABELS = {"판상": "판상형", "탑상3": "탑상 3호", "탑상4": "탑상 4호", "탑상5": "탑상 5호(2+3)"}
+GROUP_LABELS = {"판상": "판상형", "탑상4": "탑상 4호"}
 # 조합 간 세대수 차이가 이 비율 이내면 '사실상 같음'으로 안내 (탑상동 그리디 배치의 무작위 편차 수준)
 NEAR_TIE_RATIO = 0.03
 
 def tower_units_of(name, shape, units):
-    """층당 탑상형 세대수: 탑상 3호·4호·5호 동은 전 세대가 탑상형"""
-    if shape in ("L자형", "탑상4호", "탑상5호"):
+    """층당 탑상형 세대수: 탑상동은 전 세대가 탑상형"""
+    if shape in ("L자형", "탑상4호"):
         return units
     return 0
 
@@ -328,8 +312,6 @@ def describe_composition(blds):
 FLOOR_HEIGHT = 3.0
 SIDE_FACADE_DIST = 8.0   # 측벽 ↔ 창 없는 벽면 (시행령 제86조 제3항 제2호). 측벽 ↔ 측벽은 side_dist(4m)
 RATIO_TOL = 0.02         # 평형 비율: 목표보다 이만큼 넘게 배치된 평형은 잠시 배치 보류
-GRID_MIN_STEP = 6.0      # 배치 후보점 탐색 간격 하한 (m). 대지가 크면 자동으로 넓어짐
-N_TRIALS = 3             # 무작위 순서를 바꿔 여러 번 돌린 뒤 세대수 최대 결과 채택
 
 # 학교 일조: 동지 08~16시를 30분 구간으로 나눠 (구간 중앙 시각으로 판정)
 # 연속 2시간(09~15시) 이상 또는 총 4시간(08~16시) 이상 햇빛이 들면 통과
@@ -358,12 +340,15 @@ def school_sun_ok(sunny_row):
             return True
     return False
 
+ROW_GAP_DX_STEP = 2.0      # 줄 간격 계산 시 좌우 위치를 훑는 간격 (m). 결과에 이 값의 절반만큼 여유를 더함
+_ROW_GAP_CACHE = {}       # 줄 간격 계산 결과 (동 치수·규정이 같으면 재사용)
+
 def _proj(w, dist):
     wx1, wy1, wx2, wy2, dx, dy = w
     return Polygon([(wx1, wy1), (wx2, wy2), (wx2 + dx * dist, wy2 + dy * dist), (wx1 + dx * dist, wy1 + dy * dist)])
 
 @st.cache_data(show_spinner=False)
-def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=0, trap_top=0, trap_height=0, l_w=0, l_l=0, l_w_inner=0, l_l_inner=0, eff=DEFAULT_EFF, layout_version=34, flip_h=False, flip_v=False, plate_only=False, tower_only=False, allowed_groups=None, min_floors=5, n_trials=N_TRIALS, min_tower_ratio=0.0):
+def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=0, trap_top=0, trap_height=0, l_w=0, l_l=0, l_w_inner=0, l_l_inner=0, eff=DEFAULT_EFF, layout_version=39, flip_h=False, flip_v=False, plate_only=False, tower_only=False, allowed_groups=None, min_floors=5, min_tower_ratio=0.0, low_ratio=0.0):
 
     if site_shape_type == "직사각형":
         base_site_poly = Polygon([(0,0), (site_w,0), (site_w,site_l), (0,site_l)])
@@ -391,9 +376,7 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
     site_area = base_site_poly.area
     # 다각형의 안쪽으로 setback만큼 쪼그라든(Shrink) 실제 건축가능 영역 생성
     site_poly = base_site_poly.buffer(-setback_x)
-    from shapely.prepared import prep
     import shapely
-    site_poly_p = prep(site_poly)
 
     # ---- 사선/채광 이격 판정용 '인접대지경계선' 영역 (실제 대지 경계 기준) ----
     # 도로·공원 등이 있으면 공동주택은 그 '중심선'을 인접대지경계선으로 봄 (건축법 시행령 제86조 제6항)
@@ -410,8 +393,6 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
         translate(base_site_poly, xoff=road_e / 2.0),
         translate(base_site_poly, xoff=-road_w / 2.0),
     ]).buffer(_eps)
-    sun_region_p = prep(sun_region)
-    win_region_p = prep(win_region)
 
     # 바운딩 박스 기준으로 학교 위치 설정
     minx, miny, maxx, maxy = base_site_poly.bounds
@@ -456,18 +437,6 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
             res[idx, ti] = shapely.contains_xy(hull, school_xs[idx], school_ys[idx])
         return res
 
-    def school_ok(candidate, b_h, shaded):
-        cx0, cy0, cx1, cy1 = candidate.bounds
-        if (cx1 + su_maxx * b_h < sch_bbox[0] or cx0 + su_minx * b_h > sch_bbox[2] or
-                cy1 + su_maxy * b_h < sch_bbox[1] or cy0 + su_miny * b_h > sch_bbox[3]):
-            return True
-        new_shade = shade_matrix(candidate, b_h)
-        changed = np.where((new_shade & ~shaded).any(axis=1))[0]
-        for pi in changed:
-            if not school_sun_ok(~(shaded[pi] | new_shade[pi])):
-                return False
-        return True
-
     types_info = []
 
     selected_keys = [k for k in UNIT_TYPES.keys() if k.split("(")[0] in selected_sizes]
@@ -475,7 +444,7 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
         if plate_only:
             allowed_groups = ("판상",)
         elif tower_only:
-            allowed_groups = ("탑상3", "탑상4", "탑상5")
+            allowed_groups = ("탑상4",)
         else:
             allowed_groups = ALL_GROUPS
     selected_keys = [k for k in selected_keys if get_type_group(k, UNIT_TYPES[k][4], UNIT_TYPES[k][2]) in allowed_groups]
@@ -501,172 +470,17 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
             'tower_units': tower_units_of(name, shape, units),  # 층당 탑상형 세대수 (탑상형 최소 비율용)
         })
 
-    points = []
-    # 대지가 커지면 연산 속도를 위해 탐색 간격을 넓힘
-    step_size = max(GRID_MIN_STEP, min(maxx - minx, maxy - miny) / 40.0)
-    for x in np.arange(minx + setback_x, maxx - setback_x, step_size):
-        for y in np.arange(miny + setback_y, maxy - setback_y, step_size):
-            points.append((x,y))
-
     total_ratio = sum(size_ratios.values())
     max_floor_area = max_far / 100.0 * site_area
     lo_floor = min(min_floors, floors)
 
-    def feasible(candidate, final_windows, final_facades, b_floors, buildings, extras, shaded):
-        """b_floors 층일 때 모든 법규를 만족하는지. 높이가 높을수록 불리해지므로(단조) 이진 탐색 가능"""
-        b_h = b_floors * FLOOR_HEIGHT
-
-        # 0. 학교 일조 (교육환경보호) - 기존 동 그림자와 합산해 일조시간 판정
-        if has_school and not school_ok(candidate, b_h, shaded):
-            return False
-
-        # 0-1. 일조 사선제한 (건축법 시행령 제86조 제1항: 높이 10m 초과 부분은 높이의 1/2 이상)
-        #      건물을 H/2 만큼 정북(정남 기준이면 정남)으로 밀어도 인접대지경계선 안에 있어야 함
-        #      → 사다리꼴 빗변, L자 파인 부분 등 실제 경계 전체에 대해 판정
-        sun_dy = (b_h / 2.0) if sunlight_dir == "정북방향" else -(b_h / 2.0)
-        if not sun_region_p.contains(translate(candidate, yoff=sun_dy)):
-            return False
-
-        # 0-2. 채광창 방향 이격 (시행령 제86조 제3항 제1호: 창이 있는 벽면에서 '직각 방향'으로 0.5H 이상)
-        window_setback = b_h * 0.5
-        for w in final_windows:
-            if not win_region_p.contains(_proj(w, window_setback)):
-                return False
-
-        # 1. 동 간 이격 (인동간격 · 측벽)
-        c_minx, c_miny, c_maxx, c_maxy = candidate.bounds
-        for (existing_bldg, _, ex_windows, _, ex_floors, _, _, _), (ex_facades, ex_side_buf) in zip(buildings, extras):
-            e_minx, e_miny, e_maxx, e_maxy = existing_bldg.bounds
-            ex_h = ex_floors * FLOOR_HEIGHT
-            req_ns_dist = max(min_ns_dist, max(b_h, ex_h) * h_multiplier)
-            reach = max(req_ns_dist, SIDE_FACADE_DIST) + 5.0
-
-            if c_maxx < e_minx - reach or c_minx > e_maxx + reach or c_maxy < e_miny - reach or c_miny > e_maxy + reach:
-                continue
-            # 측벽 ↔ 측벽 최소 이격
-            if ex_side_buf.intersects(candidate):
-                return False
-            # 채광창 ↔ 상대 동 (인동간격, 두 동 중 높은 쪽 높이 기준)
-            for w in final_windows:
-                if _proj(w, req_ns_dist).intersects(existing_bldg):
-                    return False
-            for w in ex_windows:
-                if _proj(w, req_ns_dist).intersects(candidate):
-                    return False
-            # 창 없는 벽면 ↔ 상대 동 8m
-            for w in final_facades:
-                if _proj(w, SIDE_FACADE_DIST).intersects(existing_bldg):
-                    return False
-            for w in ex_facades:
-                if _proj(w, SIDE_FACADE_DIST).intersects(candidate):
-                    return False
-        return True
-
-    def run_trial(seed, init=(), types=None):
-        """무작위 순서 그리디 배치. init(이미 놓인 동 목록)이 있으면 그 위에 빈자리를 채움.
-        types를 주면 그 동 타입만 사용 (기본: 허용된 전체 타입)"""
-        use_types = types_info if types is None else types
-        rnd = random.Random(seed)
-        pts = list(points)
-        rnd.shuffle(pts)
-        buildings, extras = [], []
-        total_floor_area = 0.0
-        bldg_area = 0.0
-        placed_counts = {size: 0 for size in selected_sizes}
-        shaded = np.zeros((len(school_xs), len(SCHOOL_TIMES)), dtype=bool)
-        for bt, facades, t_info in init:
-            buildings.append(bt)
-            extras.append((facades, prep(bt[0].buffer(side_dist, resolution=2))))
-            if has_school:
-                shaded |= shade_matrix(bt[0], bt[4] * FLOOR_HEIGHT)
-            total_floor_area += t_info['supply_floor'] * bt[4]
-            bldg_area += t_info['area']
-            placed_counts[t_info['size_label']] += t_info['units'] * bt[4]
-        tower_u = sum(t_info['tower_units'] * bt[4] for bt, _, t_info in init)
-
-        for (x, y) in pts:
-            total_u = sum(placed_counts.values())
-            # 탑상형 최소 비율 미달이면 판상형(탑상 세대 없는 동)은 이 자리에 넣지 않음 → 탑상동부터 채움
-            tower_short = min_tower_ratio > 0 and (total_u == 0 or tower_u / total_u < min_tower_ratio)
-
-            def get_priority(t):
-                target_pct = size_ratios[t['size_label']] / total_ratio if total_ratio > 0 else 0
-                current_pct = placed_counts[t['size_label']] / total_u if total_u > 0 else 0
-                deficit = target_pct - current_pct
-                density = round(t['units'] / t['area'], 5)
-                return (deficit, density)
-
-            # 동일한 우선순위(같은 평형의 다른 형태)일 때 랜덤하게 선택되도록 섞은 후 정렬
-            current_types = list(use_types)
-            rnd.shuffle(current_types)
-            current_types = sorted(current_types, key=get_priority, reverse=True)
-
-            for t_info in current_types:
-                size = t_info['size_label']
-                # 평형 비율 제어: 이미 목표 비율을 넘긴 평형은 이 자리에 넣지 않음 (작은 평형이 빈자리를 독식하는 것 방지)
-                if total_u > 0 and placed_counts[size] / total_u > size_ratios[size] / total_ratio + RATIO_TOL:
-                    continue
-                if tower_short and t_info['tower_units'] == 0:
-                    continue
-                # 건폐율: 동 외곽 바닥면적(건축면적)
-                if (bldg_area + t_info['area']) / site_area * 100 > max_bcr:
-                    continue
-                # 용적률: 지상 연면적 = 세대 공급면적(전용+주거공용) 합계 → 남은 용적으로 올릴 수 있는 최고 층
-                hi_floor = min(floors, int((max_floor_area - total_floor_area) / t_info['supply_floor'] + 1e-9))
-                if hi_floor < lo_floor:
-                    continue
-
-                rotations = [0, 45, 315]  # 남향, 남동향, 남서향만 검토 (속도 최적화 및 탑상형 지원)
-                rnd.shuffle(rotations)
-
-                best = None  # (층수, angle, candidate, windows, facades)
-                for angle in rotations:
-                    final_windows = transform_windows(t_info['windows'], angle, x, y)
-                    if not is_valid_orientation(final_windows):
-                        continue
-                    candidate = translate(shapely_rotate(t_info['poly'], angle, origin=(0,0)), xoff=x, yoff=y)
-                    if not site_poly_p.contains(candidate):
-                        continue
-                    final_facades = transform_windows(t_info['facades'], angle, x, y)
-                    ok = lambda f: feasible(candidate, final_windows, final_facades, f, buildings, extras, shaded)
-                    if not ok(lo_floor):
-                        continue
-                    # 가능한 최고 층수를 이진 탐색 (최고층부터 시작, 법규에 걸리면 1개 층 단위로 깎인 결과와 동일)
-                    a, b = lo_floor, hi_floor
-                    while a < b:
-                        m = (a + b + 1) // 2
-                        if ok(m):
-                            a = m
-                        else:
-                            b = m - 1
-                    if best is None or a > best[0]:
-                        best = (a, angle, candidate, final_windows, final_facades)
-                    if a == hi_floor:
-                        break
-
-                if best is None:
-                    continue
-                b_floors, angle, candidate, final_windows, final_facades = best
-                b_h = b_floors * FLOOR_HEIGHT
-                final_dividers = transform_dividers(t_info['dividers'], angle, x, y)
-                buildings.append((candidate, t_info['shape'], final_windows, final_dividers, b_floors, t_info['units'], max(min_ns_dist, b_h * h_multiplier), t_info['name']))
-                extras.append((final_facades, prep(candidate.buffer(side_dist, resolution=2))))
-                if has_school:
-                    shaded |= shade_matrix(candidate, b_h)
-                total_floor_area += t_info['supply_floor'] * b_floors
-                bldg_area += t_info['area']
-                placed_counts[size] += t_info['units'] * b_floors
-                tower_u += t_info['tower_units'] * b_floors
-                break
-
-        units_total = sum(placed_counts.values())
-        return units_total, buildings, bldg_area
-
     # ==========================================================
-    # 판상형 열(줄) 배치 엔진 - 무작위 없음
-    # 남향 판상동을 동서 방향 '열'로 늘어놓고, 열의 위치(y)와 층수를 동적계획법(DP)으로 골라
-    # 세대수를 최대화. 열 간격 = 인동간격(두 열 중 높은 쪽 기준), 열 안의 동 간격 = 측벽 이격.
-    # 같은 조건이면 항상 같은 결과, 규제가 완화되면 세대수가 줄지 않음.
+    # 줄(열) 배치 엔진 - 무작위 없음
+    # 동서 방향 '줄'을 남→북으로 쌓고, 줄마다 한 가지 동 형태(판상 4호 또는 탑상 4호)·같은 층수·같은 간격.
+    # 줄 위치·층수·형태는 동적계획법(DP)으로 세대수가 최대가 되도록 고름.
+    #  - 판상 줄: 정남향, 동 사이 = 측벽 간격
+    #  - 탑상 줄: 45° 회전(남동·남서향), 일정한 피치, 앞뒤 탑상 줄은 반 피치씩 엇갈림(지그재그)
+    #  - 줄 간격: 두 줄 형태 조합별로 인동간격·측벽·창 없는 벽면 규정을 가장 불리한 좌우 위치에서 만족하는 최소 거리
     # ==========================================================
     def free_x_intervals(region, y0, y1):
         """region 안에 세로 구간 [y0, y1]이 통째로 들어가는 x 구간 목록"""
@@ -689,7 +503,7 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
         res, i, j = [], 0, 0
         while i < len(A) and j < len(B):
             a, b = max(A[i][0], B[j][0]), min(A[i][1], B[j][1])
-            if b > a:
+            if b >= a:
                 res.append((a, b))
             if A[i][1] < B[j][1]:
                 i += 1
@@ -697,221 +511,528 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
                 j += 1
         return res
 
-    def run_rows(plate_types):
-        """판상형 열 배치 → [(building_tuple, facades, t_info), ...]"""
-        if not plate_types:
-            return []
-        D = max(t['poly'].bounds[3] for t in plate_types)          # 열 깊이 (가장 깊은 동 기준)
-        widths = {t['name']: t['poly'].bounds[2] for t in plate_types}
+    regions = {"site": site_poly, "sun": sun_region, "win": win_region}
+    fx_cache = {}
+
+    def origin_intervals(slabs, y, region_key):
+        """slabs(동 기준 가로 띠 (y0, y1, x0, x1) 목록)가 모두 region 안에 들어가는 원점 x 구간"""
+        res = None
+        for (y0, y1, a, b) in slabs:
+            key = (region_key, round(y + y0, 2), round(y + y1, 2))
+            if key not in fx_cache:
+                fx_cache[key] = free_x_intervals(regions[region_key], y + y0, y + y1)
+            iv = [(c - a, d - b) for c, d in fx_cache[key] if d - b >= c - a]
+            res = iv if res is None else intersect_iv(res, iv)
+            if not res:
+                return []
+        return res or []
+
+    def slabs_of(poly, n=4):
+        """다각형을 가로 띠 n개로 잘라 띠마다 x 범위 (보수적 계단 근사)"""
+        bx0, by0, bx1, by1 = poly.bounds
+        hs = (by1 - by0) / n
+        out = []
+        for k in range(n):
+            y0, y1 = by0 + k * hs, by0 + (k + 1) * hs
+            part = poly.intersection(box(bx0 - 1, y0, bx1 + 1, y1))
+            if not part.is_empty:
+                out.append((y0, y1, part.bounds[0], part.bounds[2]))
+        return out
+
+    # ---- 줄 형태 준비 ----
+    plate_types = [t for t in types_info if t['shape'] == "판상형"]
+    tower_types = [t for t in types_info if t['shape'] == "탑상4호"]
+
+    def tower_geom(t):
+        r = shapely_rotate(t['poly'], 45, origin=(0, 0))
+        ox, oy = -r.bounds[0], -r.bounds[1]
+        return {'t': t, 'ox': ox, 'oy': oy, 'poly': translate(r, ox, oy),
+                'windows': transform_windows(t['windows'], 45, ox, oy),
+                'facades': transform_windows(t['facades'], 45, ox, oy),
+                'w': r.bounds[2] - r.bounds[0], 'h': r.bounds[3] - r.bounds[1]}
+
+    kinds = []
+    if plate_types:
+        D = max(t['poly'].bounds[3] for t in plate_types)
+        Wp = max(t['poly'].bounds[2] for t in plate_types)
         r_sum = sum(size_ratios[t['size_label']] for t in plate_types)
-        W_ref = sum(widths[t['name']] * size_ratios[t['size_label']] for t in plate_types) / r_sum
-        gap_side = side_dist
-        Hs = list(range(lo_floor, floors + 1))
-        if not Hs:
-            return []
-        s_minx, s_miny, s_maxx, s_maxy = site_poly.bounds
-        y_step = max(1.0, (s_maxy - s_miny) / 250.0)
-        ys = np.arange(s_miny, s_maxy - D + 1e-9, y_step)
-        if len(ys) == 0:
-            return []
+        kinds.append({
+            'kind': 'plate', 'depth': D, 'tower': False,
+            'W_ref': sum(t['poly'].bounds[2] * size_ratios[t['size_label']] for t in plate_types) / r_sum,
+            'u_ref': sum(t['units'] * size_ratios[t['size_label']] for t in plate_types) / r_sum,
+            'rep': {'poly': box(0, 0, Wp, D), 'windows': [(0, 0, Wp, 0, 0, -1)], 'facades': [(0, D, Wp, D, 0, 1)], 'w': Wp, 'h': D},
+        })
+    if tower_types:
+        geoms = {t['name']: tower_geom(t) for t in tower_types}
+        rep = max(geoms.values(), key=lambda g: g['w'])
+        r_sum = sum(size_ratios[t['size_label']] for t in tower_types)
+        kinds.append({
+            'kind': 'tower', 'depth': rep['h'], 'tower': True, 'geoms': geoms,
+            'pitch': rep['w'] + side_dist,
+            'u_ref': sum(t['units'] * size_ratios[t['size_label']] for t in tower_types) / r_sum,
+            'body_slabs': slabs_of(rep['poly']), 'rep': rep, 'win_slabs': {},
+        })
+    if not kinds:
+        return [], site_area, 0.0, base_site_poly
+    nk = len(kinds)
 
-        cache_c, cache_s, cache_w = {}, {}, {}
-        def row_intervals(y, h):
-            b_h = h * FLOOR_HEIGHT
-            k = round(y, 3)
-            if k not in cache_c:
-                cache_c[k] = free_x_intervals(site_poly, y, y + D)                      # 대지 안 (공지 이격 포함)
-            sun_dy = (b_h / 2.0) if sunlight_dir == "정북방향" else -(b_h / 2.0)
-            ks = round(y + sun_dy, 3)
-            if ks not in cache_s:
-                cache_s[ks] = free_x_intervals(sun_region, y + sun_dy, y + sun_dy + D)  # 일조 사선 H/2
-            kw = (k, h)
-            if kw not in cache_w:
-                cache_w[kw] = free_x_intervals(win_region, y - b_h * 0.5, y)            # 남측 채광창 0.5H
-            return intersect_iv(intersect_iv(cache_c[k], cache_s[ks]), cache_w[kw])
+    def window_dist(owner_h, target_h):
+        """창이 있는 동(owner_h층)의 창 앞에 마주보는 동(target_h층)까지 필요한 거리 (건축법 시행령 제86조 제3항 제2호)
+        가목: 채광창 벽면에서 두 동 중 높은 쪽 높이 × 인동간격 배수 (법제처 해석 21-0403: 두 동 높이 모두 기준)
+        나목: 창이 있는 동이 더 높으면(주된 개구부가 낮은 동을 향함) '가목에도 불구하고' 10m 이상 + 낮은 동 높이 × low_ratio"""
+        if low_ratio > 0 and owner_h > target_h:
+            return max(min_ns_dist, 10.0, low_ratio * target_h * FLOOR_HEIGHT)
+        return max(min_ns_dist, h_multiplier * max(owner_h, target_h) * FLOOR_HEIGHT)
 
-        def n_fit(length):
-            return int((length + gap_side) // (W_ref + gap_side)) if length >= W_ref else 0
+    def req_dist(h_s, h_n):
+        """남쪽 줄(h_s층)과 북쪽 줄(h_n층) 사이 인동간격. 마주보는 창은 북쪽 줄의 남향 창"""
+        return window_dist(h_n, h_s)
 
-        ny, nh = len(ys), len(Hs)
-        val = np.zeros((ny, nh))
+    # ---- 줄 형태 조합별 최소 줄 간격 (남쪽 줄 바닥선 → 북쪽 줄 바닥선) ----
+
+    def pair_conflict(S, N, dx, dy, R):
+        Np = translate(N['poly'], dx, dy)
+        if Np.intersects(S['buf']):
+            return True
+        for w in N['windows']:                       # 북쪽 줄 동의 창 앞 인동간격
+            if _proj((w[0] + dx, w[1] + dy, w[2] + dx, w[3] + dy, w[4], w[5]), R).intersects(S['poly']):
+                return True
+        for w in S['windows']:                       # 남쪽 줄 동의 창 앞 인동간격
+            if _proj(w, R).intersects(Np):
+                return True
+        for w in N['facades']:                       # 창 없는 벽면 8m
+            if _proj((w[0] + dx, w[1] + dy, w[2] + dx, w[3] + dy, w[4], w[5]), SIDE_FACADE_DIST).intersects(S['poly']):
+                return True
+        for w in S['facades']:
+            if _proj(w, SIDE_FACADE_DIST).intersects(Np):
+                return True
+        return False
+
+    def row_gap(ks, kn, R):
+        S, N = dict(kinds[ks]['rep']), kinds[kn]['rep']
+        # 같은 동 형태·치수·규정이면 계산 결과가 같으므로 모듈 전역에 캐시 (세 안·층수 역산 반복 계산 가속)
+        key = (kinds[ks]['kind'], tuple(round(v, 2) for v in S['poly'].bounds),
+               kinds[kn]['kind'], tuple(round(v, 2) for v in N['poly'].bounds), round(side_dist, 2), round(R, 2))
+        if key in _ROW_GAP_CACHE:
+            return _ROW_GAP_CACHE[key]
+        if kinds[ks]['kind'] == 'plate' and kinds[kn]['kind'] == 'plate':
+            g = S['h'] + R                            # 판상 → 판상: 북측면에서 남측 창까지 R
+        else:
+            S['buf'] = S['poly'].buffer(side_dist, resolution=2)
+            reach = R + side_dist + 5.0
+            g = 0.0
+            # 같은 줄의 동이 좌우 어디에 있어도 성립하도록, 가로 위치(dx)를 훑어 가장 큰 필요 간격을 채택.
+            # 45° 벽면 때문에 dx가 1m 바뀌면 필요 간격도 최대 1m 바뀜 → 2m 간격으로 훑고 1m 여유를 더해 놓친 위치까지 보장
+            for dx in np.arange(-N['w'] - reach, S['w'] + reach + 1e-9, ROW_GAP_DX_STEP):
+                lo_dy, hi_dy = 0.0, S['h'] + 2 * R + N['h'] + 10.0
+                if not pair_conflict(S, N, dx, lo_dy, R):
+                    continue
+                while hi_dy - lo_dy > 0.25:
+                    mid = (lo_dy + hi_dy) / 2.0
+                    if pair_conflict(S, N, dx, mid, R):
+                        lo_dy = mid
+                    else:
+                        hi_dy = mid
+                g = max(g, hi_dy)
+            if g > 0:
+                g += ROW_GAP_DX_STEP / 2.0
+            g = max(g, S['h'])                        # 줄이 겹치지는 않게
+        _ROW_GAP_CACHE[key] = g
+        return g
+
+    # ---- 줄 하나가 (y, 층수)에서 놓을 수 있는 동 위치 ----
+    def plate_intervals(y, h):
+        k = kinds[0]
+        b_h = h * FLOOR_HEIGHT
+        sun_dy = (b_h / 2.0) if sunlight_dir == "정북방향" else -(b_h / 2.0)
+        iv = origin_intervals([(0, k['depth'], 0, 0)], y, "site")                  # 대지 안 (공지 이격 포함)
+        iv = intersect_iv(iv, origin_intervals([(sun_dy, sun_dy + k['depth'], 0, 0)], y, "sun"))   # 일조 사선 H/2
+        iv = intersect_iv(iv, origin_intervals([(-b_h * 0.5, 0, 0, 0)], y, "win"))                # 남측 채광창 0.5H
+        return iv                                    # 동이 놓일 '공간' 구간
+
+    def tower_origins(kind, y, h):
+        b_h = h * FLOOR_HEIGHT
+        sun_dy = (b_h / 2.0) if sunlight_dir == "정북방향" else -(b_h / 2.0)
+        if h not in kind['win_slabs']:
+            rep = kind['rep']
+            kind['win_slabs'][h] = slabs_of(unary_union([_proj(w, b_h * 0.5) for w in rep['windows']]))
+        iv = origin_intervals(kind['body_slabs'], y, "site")
+        iv = intersect_iv(iv, origin_intervals([(a + sun_dy, b + sun_dy, c, d) for a, b, c, d in kind['body_slabs']], y, "sun"))
+        iv = intersect_iv(iv, origin_intervals(kind['win_slabs'][h], y, "win"))   # 남동·남서 창 0.5H
+        return iv                                    # 탑상동 '원점' 구간
+
+    # ---- 동별 층수: 줄의 동 형태·간격은 일정, 층수는 동마다 그 자리에서 가능한 최고 층수 (줄 최고 층수 이하) ----
+    iv_cache = {}
+
+    def place_iv(ki, y, h):
+        """형태 ki 줄을 y에 h층으로 놓을 때 쓸 수 있는 구간 (판상: 동이 놓일 공간, 탑상: 동 원점)"""
+        key = (ki, round(y, 3), h)
+        if key not in iv_cache:
+            iv_cache[key] = plate_intervals(y, h) if kinds[ki]['kind'] == 'plate' else tower_origins(kinds[ki], y, h)
+        return iv_cache[key]
+
+    def slot_hmax(ki, y, x0, x1, h_top):
+        """[x0, x1] 자리(판상: 동이 차지하는 x 범위, 탑상: 원점 x0 = x1)에서 h_top 이하로 가능한 최고 층수 (불가하면 0).
+        층수가 높을수록 일조 사선·채광 이격이 불리해지므로(단조) 이진 탐색"""
+        def ok(h):
+            return any(a - 1e-6 <= x0 and x1 <= b + 1e-6 for a, b in place_iv(ki, y, h))
+        if h_top < lo_floor or not ok(lo_floor):
+            return 0
+        lo_h, hi_h = lo_floor, h_top
+        while lo_h < hi_h:
+            m = (lo_h + hi_h + 1) // 2
+            if ok(m):
+                lo_h = m
+            else:
+                hi_h = m - 1
+        return lo_h
+
+    slot_cache = {}
+
+    def ref_slots(ki, y):
+        """줄의 대표 동 자리 [(x0, x1, 자리 최고 층수)] - 최저 층수로 놓을 수 있는 구간에 일정 간격으로 배치"""
+        key = (ki, round(y, 3))
+        if key in slot_cache:
+            return slot_cache[key]
+        kind = kinds[ki]
+        out = []
+        for a, b in place_iv(ki, y, lo_floor):
+            if kind['kind'] == 'plate':
+                W = kind['W_ref']
+                n = int((b - a + side_dist) // (W + side_dist)) if b - a >= W else 0
+                x = a + ((b - a) - (n * W + (n - 1) * side_dist)) / 2.0
+                for _ in range(n):
+                    out.append((x, x + W, slot_hmax(ki, y, x, x + W, floors)))
+                    x += W + side_dist
+            else:
+                P = kind['pitch']
+                n = int((b - a) // P) + 1
+                x = a + ((b - a) - (n - 1) * P) / 2.0
+                for _ in range(n):
+                    out.append((x, x, slot_hmax(ki, y, x, x, floors)))
+                    x += P
+        slot_cache[key] = out
+        return out
+
+    def slot_poly(ki, y, x0):
+        kind = kinds[ki]
+        return box(x0, y, x0 + kind['W_ref'], y + kind['depth']) if kind['kind'] == 'plate' else translate(kind['rep']['poly'], x0, y)
+
+    Hs = list(range(lo_floor, floors + 1))
+    if not Hs:
+        return [], site_area, 0.0, base_site_poly
+    s_minx, s_miny, s_maxx, s_maxy = site_poly.bounds
+    y_step = max(1.0, (s_maxy - s_miny) / 200.0)
+    ys = np.arange(s_miny, s_maxy + 1e-9, y_step)
+    ny, nh = len(ys), len(Hs)
+    H_arr = np.array(Hs)
+
+    # 줄 가치: 세대수 = Σ 동별 (층당 세대 × min(그 자리 최고 층수, 줄 최고 층수))
+    val = np.zeros((nk, ny, nh))
+    for ki, kind in enumerate(kinds):
         for i, y in enumerate(ys):
-            for j, h in enumerate(Hs):
-                val[i, j] = sum(n_fit(b - a) for a, b in row_intervals(y, h)) * h
+            if y + kind['depth'] > s_maxy + 1e-6:
+                continue
+            for (_, _, hm) in ref_slots(ki, y):
+                if hm >= lo_floor:
+                    val[ki, i, :] += kind['u_ref'] * np.minimum(H_arr, hm)
 
-        # 학교 일조: 열 하나만 놓았을 때도 기준 미달인 (위치, 층수)는 후보에서 제외 → 학교 쪽 열은 DP가 알아서 낮게 잡음
-        # (여러 열 그림자 합산은 아래 보정 단계에서 처리)
-        if has_school:
-            def row_school_ok(y, h):
-                total = np.zeros((len(school_xs), len(SCHOOL_TIMES)), dtype=bool)
-                for a, b in row_intervals(y, h):
-                    n = n_fit(b - a)
-                    if n == 0:
-                        continue
-                    x = a + ((b - a) - (n * W_ref + (n - 1) * gap_side)) / 2.0
-                    for _ in range(n):
-                        total |= shade_matrix(box(x, y, x + W_ref, y + D), h * FLOOR_HEIGHT)
-                        x += W_ref + gap_side
-                return all(school_sun_ok(~total[pi]) for pi in range(len(school_xs)))
+    # 학교 일조: 줄 하나만 놓았을 때도 기준 미달인 (위치, 줄 최고 층수)는 제외 → 학교 쪽 줄은 DP가 알아서 낮춤
+    if has_school:
+        def row_school_ok(ki, y, h):
+            total = np.zeros((len(school_xs), len(SCHOOL_TIMES)), dtype=bool)
+            for (x0, _, hm) in ref_slots(ki, y):
+                if hm >= lo_floor:
+                    total |= shade_matrix(slot_poly(ki, y, x0), min(hm, h) * FLOOR_HEIGHT)
+            return all(school_sun_ok(~total[pi]) for pi in range(len(school_xs)))
+        for ki in range(nk):
             for i, y in enumerate(ys):
-                cand = [j for j in range(nh) if val[i, j] > 0]
+                cand = [j for j in range(nh) if val[ki, i, j] > 0]
                 if not cand:
                     continue
                 lo_j, hi_j = cand[0], cand[-1]
-                if row_school_ok(y, Hs[hi_j]):
+                if row_school_ok(ki, y, Hs[hi_j]):
                     continue
-                if not row_school_ok(y, Hs[lo_j]):
-                    val[i, :] = 0
+                if not row_school_ok(ki, y, Hs[lo_j]):
+                    val[ki, i, :] = 0
                     continue
                 while lo_j < hi_j:      # 통과하는 최고 층수 이진 탐색
                     m = (lo_j + hi_j + 1) // 2
-                    if row_school_ok(y, Hs[m]):
+                    if row_school_ok(ki, y, Hs[m]):
                         lo_j = m
                     else:
                         hi_j = m - 1
-                val[i, lo_j + 1:] = 0
+                val[ki, i, lo_j + 1:] = 0
 
-        # 열 간격: 앞 열 북측면 ~ 뒷 열 남측면(채광창) ≥ 인동간격(두 열 중 높은 쪽 기준)
-        gap = [[max(min_ns_dist, h_multiplier * max(hp, h) * FLOOR_HEIGHT) for h in Hs] for hp in Hs]
-        best = np.full((ny, nh), -1.0)
-        back = {}
-        pm = np.full((ny, nh), -1.0)            # y 인덱스 ≤ i 중 best 최대값 (높이별)
-        pm_i = np.full((ny, nh), -1, dtype=int)
-        for i in range(ny):
-            for j in range(nh):
-                v = val[i, j]
-                if v <= 0:
-                    continue
-                b_val, b_back = v, None
+    def run_engine(robust):
+        """줄 간격 계산 방식 하나로 DP·줄 채우기·후처리까지 실행 → (세대수, 동 목록, 건축면적)
+        robust=False: 줄 최고 층수 그대로 간격 계산 (밀도 높음, 동별 층수 조정 후 위반은 최종 확인 단계에서 보정)
+        robust=True : 동별 층수가 줄 최고보다 낮아지는 모든 경우를 감안한 간격 (나목 배수가 클 때 유리)"""
+        def gap_R(h_s, h_n):
+            if not robust or low_ratio <= 0:
+                return req_dist(h_s, h_n)
+            # 실제 층수 s ≤ h_s, n ≤ h_n 의 모든 조합 중 가장 큰 필요 거리
+            #  - n ≤ s (가목): 인동간격 배수 × s ≤ … × h_s
+            #  - n > s (나목): 낮은 동 배수 × s, s ≤ min(h_s, h_n - 1)
+            return max(min_ns_dist, 10.0, FLOOR_HEIGHT * max(h_multiplier * h_s, low_ratio * min(h_s, h_n - 1)))
+        # 줄 간격을 y 칸 수로 (남쪽 줄 형태 ks·층 jp → 북쪽 줄 형태 kn·층 j)
+        off = np.zeros((nk, nh, nk, nh), dtype=int)
+        for ks in range(nk):
+            for kn in range(nk):
                 for jp in range(nh):
-                    k = int(math.floor((ys[i] - D - gap[jp][j] - ys[0]) / y_step + 1e-9))
-                    if k >= 0 and pm[k, jp] > 0 and pm[k, jp] + v > b_val:
-                        b_val, b_back = pm[k, jp] + v, (pm_i[k, jp], jp)
-                best[i, j] = b_val
-                if b_back is not None:
-                    back[(i, j)] = b_back
-            for j in range(nh):
-                if i > 0 and pm[i - 1, j] >= best[i, j]:
-                    pm[i, j], pm_i[i, j] = pm[i - 1, j], pm_i[i - 1, j]
-                else:
-                    pm[i, j], pm_i[i, j] = best[i, j], i
-        if best.max() <= 0:
-            return []
-        i, j = np.unravel_index(int(np.argmax(best)), best.shape)
-        rows = []
-        node = (int(i), int(j))
-        while node is not None:
-            rows.append((float(ys[node[0]]), Hs[node[1]]))
-            node = back.get(node)
-        rows.sort()
+                    for j in range(nh):
+                        g = row_gap(ks, kn, gap_R(Hs[jp], Hs[j]))   # jp = 남쪽 줄, j = 북쪽 줄
+                        off[ks, jp, kn, j] = int(math.ceil(g / y_step - 1e-9))
 
-        # 열 채우기: 평형 비율이 부족한 평형부터, 구간 가운데 정렬
-        recs = []   # [t_info, x, y, floors]
-        counts = {s: 0 for s in selected_sizes}
-        for (y, h) in rows:
-            for a, b in row_intervals(y, h):
-                seq, used = [], 0.0
-                while True:
-                    tot = sum(counts.values())
-                    order = sorted(plate_types, key=lambda t: counts[t['size_label']] / tot - size_ratios[t['size_label']] / total_ratio if tot else 0)
-                    pick = None
-                    for t in order:
-                        if tot > 0 and counts[t['size_label']] / tot > size_ratios[t['size_label']] / total_ratio + RATIO_TOL:
+        tower_flag = np.array([1.0 if k['tower'] else 0.0 for k in kinds])
+
+        def solve(lam):
+            """세대수 + lam × 탑상 세대수를 최대화하는 줄 구성"""
+            score = val * (1.0 + lam * tower_flag)[:, None, None]
+            best = np.full((nk, ny, nh), -1.0)
+            back = {}
+            pm = np.full((nk, nh, ny), -1.0)            # y 인덱스 ≤ i 중 best 최대값 (형태·층수별)
+            pm_i = np.full((nk, nh, ny), -1, dtype=int)
+            jr = np.arange(nh)
+            for i in range(ny):
+                for kn in range(nk):
+                    for j in range(nh):
+                        v = score[kn, i, j]
+                        if v <= 0:
                             continue
-                        need = widths[t['name']] + (gap_side if seq else 0.0)
-                        if used + need <= (b - a) + 1e-9:
-                            pick = t
-                            break
-                    if pick is None:
-                        break
-                    used += widths[pick['name']] + (gap_side if seq else 0.0)
-                    seq.append(pick)
-                    counts[pick['size_label']] += pick['units'] * h
-                x = a + ((b - a) - used) / 2.0
-                for t in seq:
-                    recs.append([t, x, y, h])
-                    x += widths[t['name']] + gap_side
+                        b_val, b_back = v, None
+                        for ks in range(nk):
+                            idx = i - off[ks, :, kn, j]
+                            ok = idx >= 0
+                            if not ok.any():
+                                continue
+                            cand = np.where(ok, pm[ks, jr, np.maximum(idx, 0)], -1.0)
+                            jp = int(np.argmax(cand))
+                            if cand[jp] > 0 and cand[jp] + v > b_val:
+                                b_val, b_back = cand[jp] + v, (ks, int(pm_i[ks, jp, idx[jp]]), jp)
+                        best[kn, i, j] = b_val
+                        if b_back is not None:
+                            back[(kn, i, j)] = b_back
+                for k in range(nk):
+                    cur = best[k, i, :]
+                    if i > 0:
+                        prev = pm[k, :, i - 1]
+                        keep = prev >= cur
+                        pm[k, :, i] = np.where(keep, prev, cur)
+                        pm_i[k, :, i] = np.where(keep, pm_i[k, :, i - 1], i)
+                    else:
+                        pm[k, :, i] = cur
+                        pm_i[k, :, i] = i
+            if best.max() <= 0:
+                return []
+            node = tuple(int(v) for v in np.unravel_index(int(np.argmax(best)), best.shape))
+            rows = []
+            while node is not None:
+                kn, i, j = node
+                rows.append((float(ys[i]), Hs[j], kn))
+                nb = back.get(node)
+                node = (nb[0], nb[1], nb[2]) if nb else None
+            rows.sort()
+            return rows
 
-        def bld_poly(r):
-            return translate(r[0]['poly'], xoff=r[1], yoff=r[2])
+        def rows_share(rows):
+            tot = sum(val[k, int(round((y - ys[0]) / y_step)), Hs.index(h)] for y, h, k in rows)
+            tw = sum(val[k, int(round((y - ys[0]) / y_step)), Hs.index(h)] for y, h, k in rows if kinds[k]['tower'])
+            return tw / tot if tot > 0 else 0.0
+
+        # 탑상형 최소 비율: 탑상 줄에 가중치(lam)를 주어 비율을 채우는 최소 가중치를 이분 탐색
+        rows = solve(0.0)
+        if min_tower_ratio > 0 and nk == 2 and rows_share(rows) < min_tower_ratio - RATIO_TOL:
+            lo_l, hi_l = 0.0, 1.0
+            best_rows = None
+            while hi_l <= 64:
+                r_hi = solve(hi_l)
+                if rows_share(r_hi) >= min_tower_ratio - RATIO_TOL:
+                    best_rows = r_hi
+                    break
+                lo_l, hi_l = hi_l, hi_l * 2
+            if best_rows is None:
+                rows = r_hi                              # 끝까지 못 채우면 탑상이 가장 많은 구성
+            else:
+                for _ in range(8):
+                    mid = (lo_l + hi_l) / 2.0
+                    r_mid = solve(mid)
+                    if rows_share(r_mid) >= min_tower_ratio - RATIO_TOL:
+                        hi_l, best_rows = mid, r_mid
+                    else:
+                        lo_l = mid
+                rows = best_rows
+
+        # ---- 줄 채우기: 평형 비율이 부족한 평형부터, 판상은 가운데 정렬, 탑상은 앞 탑상 줄과 반 피치 엇갈림 ----
+        #      동 자리는 최저 층수로 놓을 수 있는 구간에 일정 간격으로 잡고, 동마다 그 자리 최고 층수(줄 최고 층수 이하)를 줌
+        counts = {s: 0 for s in selected_sizes}
+        recs = []                                        # 동 목록 {'t', 'poly', 'angle', 'X', 'Y', 'h', 'y'}
+        prev_tower_x = None
+
+        def next_type(types, fits):
+            tot = sum(counts.values())
+            order = sorted(types, key=lambda t: counts[t['size_label']] / tot - size_ratios[t['size_label']] / total_ratio if tot else 0)
+            for t in order:
+                if tot > 0 and counts[t['size_label']] / tot > size_ratios[t['size_label']] / total_ratio + RATIO_TOL:
+                    continue
+                if fits(t):
+                    return t
+            # 모든 평형이 목표를 넘었으면 빈칸으로 두지 않고 가장 부족한 평형 중 들어가는 것으로 채움 (줄 간격 일정 유지)
+            return next((t for t in order if fits(t)), None)
+
+        for (y, h, ki) in rows:
+            kind = kinds[ki]
+            if kind['kind'] == 'plate':
+                for a, b in place_iv(ki, y, lo_floor):
+                    seq, used = [], 0.0
+                    while True:
+                        pick = next_type(plate_types, lambda t: used + t['poly'].bounds[2] + (side_dist if seq else 0.0) <= (b - a) + 1e-9)
+                        if pick is None:
+                            break
+                        used += pick['poly'].bounds[2] + (side_dist if seq else 0.0)
+                        seq.append(pick)
+                        counts[pick['size_label']] += pick['units'] * h
+                    x = a + ((b - a) - used) / 2.0
+                    for t in seq:
+                        w = t['poly'].bounds[2]
+                        hb = slot_hmax(ki, y, x, x + w, h)
+                        if hb >= lo_floor:
+                            recs.append({'t': t, 'poly': translate(t['poly'], x, y), 'angle': 0, 'X': x, 'Y': y, 'h': hb, 'y': y})
+                        counts[t['size_label']] += t['units'] * (hb - h)
+                        x += w + side_dist
+            else:
+                P, rep = kind['pitch'], kind['rep']
+                first_x = None
+                for a, b in place_iv(ki, y, lo_floor):
+                    n = int((b - a) // P) + 1
+                    slack = (b - a) - (n - 1) * P
+                    start = a + slack / 2.0
+                    if prev_tower_x is not None:          # 앞 탑상 줄과 반 피치 엇갈리게
+                        cand = a + ((prev_tower_x + P / 2.0 - a) % P)
+                        if cand <= a + slack + 1e-9:
+                            start = cand
+                    for m in range(n):
+                        xs = start + m * P
+                        hb = slot_hmax(ki, y, xs, xs, h)
+                        if hb < lo_floor:
+                            continue
+                        t = next_type(tower_types, lambda t: True)
+                        if t is None:
+                            continue
+                        g = kind['geoms'][t['name']]
+                        X, Y = xs + (rep['w'] - g['w']) / 2.0, y
+                        recs.append({'t': t, 'poly': translate(g['poly'], X, Y), 'angle': 45, 'X': X + g['ox'], 'Y': Y + g['oy'], 'h': hb, 'y': y})
+                        counts[t['size_label']] += t['units'] * hb
+                        if first_x is None:
+                            first_x = xs
+                if first_x is not None:
+                    prev_tower_x = first_x
 
         # 학교 일조: 기준 미달이면 미달 판정점을 가장 많이 가리는 동부터 1개 층씩 낮춤
         if has_school and recs:
             sm_cache = {}
-            def sm(r):
-                key = (id(r), r[3])
+            def rec_shade(r):
+                key = (id(r), r['h'])
                 if key not in sm_cache:
-                    sm_cache[key] = shade_matrix(bld_poly(r), r[3] * FLOOR_HEIGHT)
+                    sm_cache[key] = shade_matrix(r['poly'], r['h'] * FLOOR_HEIGHT)
                 return sm_cache[key]
             while recs:
                 total = np.zeros((len(school_xs), len(SCHOOL_TIMES)), dtype=bool)
                 for r in recs:
-                    total |= sm(r)
+                    total |= rec_shade(r)
                 bad = [pi for pi in range(len(school_xs)) if not school_sun_ok(~total[pi])]
                 if not bad:
                     break
-                scores = [sm(r)[bad].sum() for r in recs]
-                r = recs[int(np.argmax(scores))]
-                r[3] -= 1
-                if r[3] < lo_floor:
+                r = recs[int(np.argmax([rec_shade(r)[bad].sum() for r in recs]))]
+                r['h'] -= 1
+                if r['h'] < lo_floor:
                     recs.remove(r)
 
         # 용적률 상한: 가장 높은 동(같으면 북쪽)부터 1개 층씩 낮춤
-        tot_area = sum(r[0]['supply_floor'] * r[3] for r in recs)
+        tot_area = sum(r['t']['supply_floor'] * r['h'] for r in recs)
         while recs and tot_area > max_floor_area + 1e-6:
-            r = max(recs, key=lambda r: (r[3], r[2]))
-            r[3] -= 1
-            tot_area -= r[0]['supply_floor']
-            if r[3] < lo_floor:
-                tot_area -= r[0]['supply_floor'] * r[3]
+            r = max(recs, key=lambda r: (r['h'], r['y']))
+            r['h'] -= 1
+            tot_area -= r['t']['supply_floor']
+            if r['h'] < lo_floor:
+                tot_area -= r['t']['supply_floor'] * r['h']
                 recs.remove(r)
 
-        # 건폐율 상한: 세대수가 가장 적은 동(같으면 북쪽)부터 제외
-        while recs and sum(r[0]['area'] for r in recs) / site_area * 100 > max_bcr:
-            recs.remove(min(recs, key=lambda r: (r[0]['units'] * r[3], -r[2])))
+        # 최종 동 간격 확인: 동별 층수 조정(자리·학교·용적률) 뒤 실제 층수로 모든 동 쌍의 인동간격을 다시 확인하고,
+        # 위반이면 간격을 줄이는 쪽 동을 1개 층씩 낮춤 (나목 완화는 '창이 있는 동이 더 높을 때'만 성립하므로 필수)
+        #  - 나목 상황(창 있는 동이 더 높음): 낮은 동을 낮춤 → 필요 거리 감소
+        #  - 가목 상황: 두 동 중 높은 동을 낮춤
+        for r in recs:
+            r['win'] = transform_windows(r['t']['windows'], r['angle'], r['X'], r['Y'])
+        max_reach = max([window_dist(floors, floors), window_dist(floors, lo_floor)] + [0.0])
+        for _ in range(2000):
+            viol = None
+            for A in recs:
+                ax0, ay0, ax1, ay1 = A['poly'].bounds
+                for B in recs:
+                    if B is A:
+                        continue
+                    bx0, by0, bx1, by1 = B['poly'].bounds
+                    if bx0 > ax1 + max_reach or bx1 < ax0 - max_reach or by0 > ay1 + max_reach or by1 < ay0 - max_reach:
+                        continue
+                    R = window_dist(A['h'], B['h'])
+                    if any(_proj(w, R - 0.01).intersection(B['poly']).area > 0.01 for w in A['win']):
+                        viol = (A, B)
+                        break
+                if viol:
+                    break
+            if viol is None:
+                break
+            A, B = viol
 
-        out = []
-        for t, x, y, f in recs:
-            b_h = f * FLOOR_HEIGHT
-            bt = (bld_poly([t, x, y, f]), t['shape'], transform_windows(t['windows'], 0, x, y),
-                  transform_dividers(t['dividers'], 0, x, y), f, t['units'],
-                  max(min_ns_dist, b_h * h_multiplier), t['name'])
-            out.append((bt, transform_windows(t['facades'], 0, x, y), t))
-        return out
+            def violates(ha, hb):
+                R = window_dist(ha, hb)
+                return any(_proj(w, R - 0.01).intersection(B['poly']).area > 0.01 for w in A['win'])
 
-    plate_types = [t for t in types_info if t['shape'] == "판상형"]
-    row_init = run_rows(plate_types)
-    if types_info and len(plate_types) == len(types_info):
-        # 판상형만: 열 배치 결과 그대로 (무작위 없음)
-        buildings = [bt for bt, _, _ in row_init]
-        bldg_area = sum(t['area'] for _, _, t in row_init)
-        return buildings, site_area, bldg_area, base_site_poly
+            if low_ratio > 0 and A['h'] > B['h']:
+                # 나목 상황: (1) 낮은 동 B를 낮추거나 (2) 창 있는 동 A를 B와 같은 높이로 내려 가목으로 바꾸는 것 중 세대 손실이 작은 쪽
+                hb = B['h']
+                while hb >= lo_floor and violates(A['h'], hb):
+                    hb -= 1
+                loss1 = (B['h'] - hb) * B['t']['units'] if hb >= lo_floor else B['h'] * B['t']['units']
+                loss2 = (A['h'] - B['h']) * A['t']['units'] if not violates(B['h'], B['h']) else float('inf')
+                if loss2 < loss1:
+                    A['h'] = B['h']
+                elif hb >= lo_floor:
+                    B['h'] = hb
+                else:
+                    recs.remove(B)
+                continue
+            low = A if A['h'] > B['h'] else B          # 가목 상황: 두 동 중 높은 동을 낮춤
+            low['h'] -= 1
+            if low['h'] < lo_floor:
+                recs.remove(low)
 
-    # 혼합 조합: 아래 후보 중 최대
-    #  ① 판상 열 배치 + 빈자리 그리디 채움  ② 전체 타입 그리디 n회  ③ 탑상동만 그리디 n회
-    #  → ①로 '판상형'안 이상, ③(탑상형안과 같은 계산)으로 '탑상형'안 이상이 항상 보장됨
-    #  → 탑상형 최소 비율이 있으면 비율을 충족한 결과를 우선 (전부 미달이면 세대수 최대)
-    def rank(result):
-        meets = tower_share(result[1]) >= min_tower_ratio - RATIO_TOL
-        return (meets, result[0])
-    tower_types = [t for t in types_info if t['tower_units'] > 0]
-    candidates = []
-    if row_init:
-        candidates.append(lambda: run_trial(42, init=row_init))
-    for trial in range(n_trials):
-        candidates.append(lambda s=42 + trial: run_trial(s))
-    if plate_types and tower_types:
-        for trial in range(n_trials):
-            candidates.append(lambda s=42 + trial: run_trial(s, types=tower_types))
-    best_result = None
-    for make in candidates:
-        result = make()
-        if best_result is None or rank(result) > rank(best_result):
-            best_result = result
-    _, buildings, bldg_area = best_result
+        # 건폐율 상한: 북쪽 줄의 동부터 제외
+        while recs and sum(r['t']['area'] for r in recs) / site_area * 100 > max_bcr:
+            recs.remove(max(recs, key=lambda r: (r['y'], r['X'])))
+
+        buildings = []
+        for r in recs:
+            t, f = r['t'], r['h']
+            buildings.append((r['poly'], t['shape'], transform_windows(t['windows'], r['angle'], r['X'], r['Y']),
+                              transform_dividers(t['dividers'], r['angle'], r['X'], r['Y']), f, t['units'],
+                              max(min_ns_dist, f * FLOOR_HEIGHT * h_multiplier), t['name']))
+        bldg_area = sum(r['t']['area'] for r in recs)
+        return sum(r['t']['units'] * r['h'] for r in recs), buildings, bldg_area
+
+    results = [run_engine(False)] + ([run_engine(True)] if low_ratio > 0 else [])
+    def rank(res):
+        meets = tower_share(res[1]) >= min_tower_ratio - RATIO_TOL if min_tower_ratio > 0 and nk == 2 else True
+        return (meets, res[0])
+    _, buildings, bldg_area = max(results, key=rank)
     return buildings, site_area, bldg_area, base_site_poly
 
+
 APP_TITLE = "속 터져서 내가 직접 만들어 본 공동주택 假배치"
+# 버전 규칙: 배치 엔진·구조가 크게 바뀌면 앞자리(+1.0), 기능 추가·수정은 뒷자리(+0.1). 수정할 때마다 날짜와 함께 갱신
+APP_VERSION = "v2.2"
+APP_UPDATED = "2026-10-09"
 st.set_page_config(layout="wide", page_title=APP_TITLE)
 
 @st.dialog("📖 사용 매뉴얼", width="large")
@@ -925,7 +1046,8 @@ def show_manual():
 
 col_title, col_btn = st.columns([5, 1])
 with col_title:
-    st.title(APP_TITLE + " 😤")
+    st.title(APP_TITLE)
+    st.caption(f"{APP_VERSION} · {APP_UPDATED} 수정")
 with col_btn:
     st.write("")
     st.write("")
@@ -1042,7 +1164,7 @@ with col_input:
     use_custom = st.checkbox("기타 평형 직접 입력", value=False)
     if use_custom:
         c_area = st.number_input("기타 평형 전용면적 (m²)", min_value=10, max_value=300, value=135,
-                                 help="판상형·탑상형(3호·4호·5호)을 기본 평형과 같은 산정식으로 자동 생성합니다.")
+                                 help="판상형(계단식 4호)·탑상형(4호)을 기본 평형과 같은 산정식으로 자동 생성합니다.")
         if f"{c_area}m²" in {k.split("(")[0] for k in UNIT_TYPES}:
             st.warning(f"{c_area}m²는 기본 평형에 있습니다. 위 체크박스를 사용하세요.")
             use_custom = False
@@ -1088,14 +1210,15 @@ with col_input:
     STYLE_OPTIONS = {"혼합 (기본)": "혼합", "판상형": "판상형", "탑상형": "탑상형"}
     layout_style = st.radio("배치도에 그릴 안", list(STYLE_OPTIONS.keys()), horizontal=True,
                             help="세 안을 모두 계산해 비교표로 보여주고, 여기서 고른 안을 배치도에 그립니다.\n\n"
-                                 "· 혼합 (기본): 판상동과 탑상동을 모두 써서 세대수가 가장 많은 배치. 판상형안·탑상형안보다 세대수가 적게 나오지 않음\n"
-                                 "· 판상형: 남향 판상동(계단식 4호·복도식 4세대)만 열로 배치\n"
-                                 "· 탑상형: 탑상 3호·4호·5호(2+3, 출입구 2개)만 배치\n\n"
-                                 "※ 탑상 4호·5호는 계단식 평형(55\\~114m²)과 기타 평형에서만 생성됩니다.")
+                                 "모든 안은 동서 방향 '줄' 단위로 배치합니다. 한 줄은 한 가지 동 형태·같은 간격이고, 층수는 동마다 그 자리에서 가능한 최고 층수입니다.\n\n"
+                                 "· 혼합 (기본): 판상 줄과 탑상 줄을 섞어 세대수가 가장 많은 구성 (탑상형 최소 비율 충족)\n"
+                                 "· 판상형: 남향 판상동(계단식 4호·복도식 4세대) 줄만\n"
+                                 "· 탑상형: 탑상 4호 줄만 (45° 배치, 앞뒤 줄 지그재그)\n\n"
+                                 "※ 탑상 4호는 계단식 평형(55\\~114m²)과 기타 평형에서만 생성됩니다.")
     plan_key = STYLE_OPTIONS[layout_style]
     min_tower_pct = st.number_input("탑상형 최소 비율 (세대수 기준, %)", min_value=0, max_value=100, value=50, step=5,
                                     help="기본 50% (요즘 단지 구성 기준). 법정 비율은 없으므로 세대수 최대를 보려면 0%로 바꾸세요. 지구단위계획·심의에서 비율을 정한 사업지는 그 값을 입력하세요.\n\n"
-                                         "· 입력하면 전체 세대 중 탑상동 세대가 이 비율 이상이어야 하며, 혼합안은 비율을 채울 때까지 탑상동을 먼저 배치\n"
+                                         "· 입력하면 전체 세대 중 탑상동 세대가 이 비율 이상이어야 하며, 혼합안은 이 비율을 채우도록 탑상 줄 수를 정함\n"
                                          "· 비율에 못 미치는 안은 비교표에 '참고용'으로 표시")
     if min_tower_pct == 0:
         st.caption("※ 세대수 최대 기준입니다. 판상형 일색 배치는 건축·경관 심의에서 형태 다양화(탑상동 혼합)를 요구받을 수 있으니 비교표의 혼합·탑상형 안도 함께 참고하세요.")
@@ -1110,6 +1233,12 @@ with col_input:
                                       help="마주보는 두 동 중 높은 쪽 높이 기준. 광명시 조례 0.8H. 지자체 조례에 맞게 바꾸세요.")
     side_dist = col_side.number_input("측벽 간 이격 (m)", min_value=4.0, max_value=30.0, value=8.0, step=1.0,
                                       help="측벽끼리 마주보는 동 사이 거리. 법정 최소 4m이지만 고층 동을 4m만 띄우는 경우는 드물어 기본 8m. 판상형 열 안의 동 간격으로도 쓰입니다.")
+    low_ratio = st.number_input("남저북고 완화: 낮은 동 높이 배수 (0 = 적용 안 함)", min_value=0.0, max_value=2.0, value=0.5, step=0.1,
+                                help="건축법 시행령 제86조 제3항 제2호 나목: 높은 동의 주된 개구부(거실·안방 창)가 낮은 동을 향하면, "
+                                     "인동간격을 '10m 이상 + 낮은 동 높이 × 이 배수'로 정합니다 (가목 대신 적용). 남쪽 동을 낮게, 북쪽 동을 높게 배치하면 동 간격이 크게 줄어 용적률을 더 채울 수 있습니다.\n\n"
+                                     "· 시행령 최소 0.5배, 실제 수치는 지자체 건축조례로 정합니다.\n"
+                                     "· 기본 0.5배: 광명시·시흥시 현행 조례 모두 시행령 최소 기준(10m 이상 + 낮은 동 높이의 0.5배)을 그대로 적용. 다른 지자체는 조례를 확인해 바꾸세요.\n"
+                                     "· 0이면 적용하지 않고 모든 경우 인동간격(H 배수)만 씁니다.")
     min_ns_dist = 10.0
     setback_x = 3.0
     setback_y = 3.0
@@ -1118,7 +1247,8 @@ with col_input:
         st.markdown(f"""
 - **일조 사선 ({sunlight_dir}):** {'북쪽' if sunlight_dir == '정북방향' else '남쪽'} 인접대지경계선에서 H/2 이상 (도로·공원은 중심선 기준)
 - **채광창 이격:** 창이 있는 벽면에서 직각 방향으로 인접대지경계선까지 0.5H 이상
-- **인동간격:** {h_multiplier:g}H 이상, 최소 {min_ns_dist:g} m (두 동 중 높은 쪽 기준)
+- **인동간격 (가목):** {h_multiplier:g}H 이상, 최소 {min_ns_dist:g} m (두 동 중 높은 쪽 기준)
+- **남저북고 완화 (나목):** {('높은 동의 창이 낮은 동을 향하면 10 m 이상 + 낮은 동 높이 × ' + format(low_ratio, 'g')) if low_ratio > 0 else '적용 안 함'}
 - **측벽 이격:** 측벽↔측벽 {side_dist:g} m, 측벽↔창 없는 벽면 8 m 이상
 - **대지 안의 공지:** 대지경계선에서 {setback_x:g} m
 - **동 규모:** 4호 이하이거나 1개동 길이 60 m 이하 (경기도 주택조례 제5조제1호, 꺾인 동은 외곽 긴 변 기준)
@@ -1132,7 +1262,7 @@ with col_viz:
         l_w, l_l, l_w_inner, l_l_inner, max_far, max_bcr,
         limit_floors, floors, min_floors, sunlight_dir, school_n, school_s, school_e, school_w,
         road_n, road_s, road_e, road_w, str(selected_sizes), str(size_ratios),
-        flip_h, flip_v, str(eff), min_tower_pct
+        flip_h, flip_v, str(eff), min_tower_pct, low_ratio
     )
 
     def run_layout(groups, floors_limit=None):
@@ -1140,7 +1270,7 @@ with col_viz:
         mixes = "판상" in groups and any(g != "판상" for g in groups)
         return auto_optimize_layout(
             site_w, site_l, site_shape_type, floors if floors_limit is None else floors_limit, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=trap_bottom, trap_top=trap_top, trap_height=trap_height, l_w=l_w, l_l=l_l, l_w_inner=l_w_inner, l_l_inner=l_l_inner, eff=eff, flip_h=flip_h, flip_v=flip_v, allowed_groups=tuple(groups), min_floors=min_floors,
-            min_tower_ratio=min_tower_ratio if mixes else 0.0)
+            min_tower_ratio=min_tower_ratio if mixes else 0.0, low_ratio=low_ratio)
 
     def count_units(blds):
         return sum(b[5] * b[4] for b in blds)
