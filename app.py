@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 import random
 import math
 import os
-from shapely.geometry import Polygon, box
+from shapely.geometry import Polygon, box, LineString
 from shapely.affinity import translate, rotate as shapely_rotate
 from shapely.ops import unary_union
 
@@ -343,6 +343,15 @@ def school_sun_ok(sunny_row):
 ROW_GAP_DX_STEP = 2.0      # 줄 간격 계산 시 좌우 위치를 훑는 간격 (m). 결과에 이 값의 절반만큼 여유를 더함
 _ROW_GAP_CACHE = {}       # 줄 간격 계산 결과 (동 치수·규정이 같으면 재사용)
 
+def spacing_dist(owner_h, target_h, h_multiplier, low_ratio, min_ns_dist):
+    """창이 있는 동(owner_h층)의 창 앞에 마주보는 동(target_h층)까지 필요한 거리 (건축법 시행령 제86조 제3항 제2호)
+    가목: 채광창 벽면에서 두 동 중 높은 쪽 높이 × 인동간격 배수 (법제처 해석 21-0403: 두 동 높이 모두 기준)
+    나목: 창이 있는 동이 더 높으면(주된 개구부가 낮은 동을 향함) '가목에도 불구하고' 10m 이상 + 낮은 동 높이 × low_ratio
+    배치 엔진과 배치도 음영이 같은 규칙을 쓰도록 한 곳에 둠"""
+    if low_ratio > 0 and owner_h > target_h:
+        return max(min_ns_dist, 10.0, low_ratio * target_h * FLOOR_HEIGHT)
+    return max(min_ns_dist, h_multiplier * max(owner_h, target_h) * FLOOR_HEIGHT)
+
 def _proj(w, dist):
     wx1, wy1, wx2, wy2, dx, dy = w
     return Polygon([(wx1, wy1), (wx2, wy2), (wx2 + dx * dist, wy2 + dy * dist), (wx1 + dx * dist, wy1 + dy * dist)])
@@ -577,12 +586,7 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
     nk = len(kinds)
 
     def window_dist(owner_h, target_h):
-        """창이 있는 동(owner_h층)의 창 앞에 마주보는 동(target_h층)까지 필요한 거리 (건축법 시행령 제86조 제3항 제2호)
-        가목: 채광창 벽면에서 두 동 중 높은 쪽 높이 × 인동간격 배수 (법제처 해석 21-0403: 두 동 높이 모두 기준)
-        나목: 창이 있는 동이 더 높으면(주된 개구부가 낮은 동을 향함) '가목에도 불구하고' 10m 이상 + 낮은 동 높이 × low_ratio"""
-        if low_ratio > 0 and owner_h > target_h:
-            return max(min_ns_dist, 10.0, low_ratio * target_h * FLOOR_HEIGHT)
-        return max(min_ns_dist, h_multiplier * max(owner_h, target_h) * FLOOR_HEIGHT)
+        return spacing_dist(owner_h, target_h, h_multiplier, low_ratio, min_ns_dist)
 
     def req_dist(h_s, h_n):
         """남쪽 줄(h_s층)과 북쪽 줄(h_n층) 사이 인동간격. 마주보는 창은 북쪽 줄의 남향 창"""
@@ -1031,7 +1035,7 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
 
 APP_TITLE = "속 터져서 내가 직접 만들어 본 공동주택 假배치"
 # 버전 규칙: 배치 엔진·구조가 크게 바뀌면 앞자리(+1.0), 기능 추가·수정은 뒷자리(+0.1). 수정할 때마다 날짜와 함께 갱신
-APP_VERSION = "v2.3"
+APP_VERSION = "v2.4"
 APP_UPDATED = "2026-10-09"
 st.set_page_config(layout="wide", page_title=APP_TITLE)
 
@@ -1566,12 +1570,26 @@ with col_viz:
         for idx, b in enumerate(final_buildings):
             poly, bldg_shape, windows, dividers, b_floors, b_units, b_ns_dist, name = b
             x, y = poly.exterior.xy
-            hover_text = f"{idx+1}동 · {type_label(name)}<br>{b_floors}층 · 층당 {b_units}세대 (동 전체 {b_units * b_floors}세대)<br>인동간격 {b_ns_dist:.1f}m"
+            # 창마다 실제로 적용되는 인동간격으로 음영을 그림: 창 앞 가장 가까운 동과의 관계로 가목/나목 판정
+            #  (마주보는 동이 없으면 자기 높이 기준 가목 거리)
+            reach = spacing_dist(floors, floors, h_multiplier, 0.0, min_ns_dist) + 5.0
+            win_dists = []
+            for w in windows:
+                front = [ob for ob in final_buildings if ob is not b and _proj(w, reach).intersects(ob[0])]
+                if front:
+                    near = min(front, key=lambda ob: LineString([(w[0], w[1]), (w[2], w[3])]).distance(ob[0]))
+                    d = spacing_dist(b_floors, near[4], h_multiplier, low_ratio, min_ns_dist)
+                    rule = "남저북고 완화(나목)" if (low_ratio > 0 and b_floors > near[4]) else "가목"
+                else:
+                    d, rule = spacing_dist(b_floors, b_floors, h_multiplier, 0.0, min_ns_dist), "가목"
+                win_dists.append((w, d, rule))
+            dist_txt = " / ".join(sorted({f"{d:.0f}m ({rule})" for _, d, rule in win_dists}))
+            hover_text = f"{idx+1}동 · {type_label(name)}<br>{b_floors}층 · 층당 {b_units}세대 (동 전체 {b_units * b_floors}세대)<br>창 앞 인동간격 {dist_txt}"
             fig.add_trace(go.Scatter(x=list(x), y=list(y), fill='toself', fillcolor=get_type_color(name), mode='lines', line=dict(color='#333333', width=1), text=hover_text, hoverinfo='text', showlegend=False))
             # 세대 구분선은 그리지 않음 (동 외곽만 표시, 세대 구성은 hover로 확인)
 
-            for (wx1, wy1, wx2, wy2, dx, dy) in windows:
-                proj_poly = Polygon([(wx1, wy1), (wx2, wy2), (wx2 + dx * b_ns_dist, wy2 + dy * b_ns_dist), (wx1 + dx * b_ns_dist, wy1 + dy * b_ns_dist)])
+            for ((wx1, wy1, wx2, wy2, dx, dy), d_w, _) in win_dists:
+                proj_poly = Polygon([(wx1, wy1), (wx2, wy2), (wx2 + dx * d_w, wy2 + dy * d_w), (wx1 + dx * d_w, wy1 + dy * d_w)])
                 px, py = proj_poly.exterior.xy
                 fig.add_trace(go.Scatter(x=list(px), y=list(py), fill='toself', fillcolor='rgba(255,0,0,0.1)', mode='lines', line=dict(color='rgba(255,0,0,0.7)', width=1, dash='dot'), hoverinfo='skip', showlegend=False))
 
