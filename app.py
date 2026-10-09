@@ -1031,7 +1031,7 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
 
 APP_TITLE = "속 터져서 내가 직접 만들어 본 공동주택 假배치"
 # 버전 규칙: 배치 엔진·구조가 크게 바뀌면 앞자리(+1.0), 기능 추가·수정은 뒷자리(+0.1). 수정할 때마다 날짜와 함께 갱신
-APP_VERSION = "v2.2"
+APP_VERSION = "v2.3"
 APP_UPDATED = "2026-10-09"
 st.set_page_config(layout="wide", page_title=APP_TITLE)
 
@@ -1207,13 +1207,13 @@ with col_input:
     # ------------------------------------------------------------------
     st.header("4. 동 형태")
     # 배치도에 그릴 안. 세 안은 항상 모두 계산해 비교표로 보여줌
-    STYLE_OPTIONS = {"혼합 (기본)": "혼합", "판상형": "판상형", "탑상형": "탑상형"}
+    STYLE_OPTIONS = {"탑상형 (기본)": "탑상형", "혼합": "혼합", "판상형": "판상형"}
     layout_style = st.radio("배치도에 그릴 안", list(STYLE_OPTIONS.keys()), horizontal=True,
                             help="세 안을 모두 계산해 비교표로 보여주고, 여기서 고른 안을 배치도에 그립니다.\n\n"
                                  "모든 안은 동서 방향 '줄' 단위로 배치합니다. 한 줄은 한 가지 동 형태·같은 간격이고, 층수는 동마다 그 자리에서 가능한 최고 층수입니다.\n\n"
-                                 "· 혼합 (기본): 판상 줄과 탑상 줄을 섞어 세대수가 가장 많은 구성 (탑상형 최소 비율 충족)\n"
-                                 "· 판상형: 남향 판상동(계단식 4호·복도식 4세대) 줄만\n"
-                                 "· 탑상형: 탑상 4호 줄만 (45° 배치, 앞뒤 줄 지그재그)\n\n"
+                                 "· 탑상형 (기본): 탑상 4호 줄만 (45° 배치, 앞뒤 줄 지그재그). 요즘 단지 구성에 가까운 안\n"
+                                 "· 혼합: 판상 줄과 탑상 줄을 섞어 세대수가 가장 많은 구성 (탑상형 최소 비율 충족)\n"
+                                 "· 판상형: 남향 판상동(계단식 4호·복도식 4세대) 줄만\n\n"
                                  "※ 탑상 4호는 계단식 평형(55\\~114m²)과 기타 평형에서만 생성됩니다.")
     plan_key = STYLE_OPTIONS[layout_style]
     min_tower_pct = st.number_input("탑상형 최소 비율 (세대수 기준, %)", min_value=0, max_value=100, value=50, step=5,
@@ -1323,7 +1323,7 @@ with col_viz:
                     tail = f"⚠️ 탑상형 {cur_share:.0%}로 기준 {min_tower_pct}%에 미달하고, 기준을 충족하는 안이 없습니다."
                 hint = ("warning", f"{head}\n\n{tail}\n\n{compare_txt}")
             elif best_units > current_units and not is_near_tie(best_units, current_units):
-                hint = ("warning", f"{head}\n\n💡 **{best_style}안**({best_comp})이 **{best_units:,}세대 (+{best_units - current_units:,})**로 더 많습니다. '혼합 (기본)'을 고르면 최대안을 볼 수 있습니다.\n\n{compare_txt}")
+                hint = ("warning", f"{head}\n\n💡 **{best_style}안**({best_comp})이 **{best_units:,}세대 (+{best_units - current_units:,})**로 더 많습니다. '{best_style}'을 고르면 그 안의 배치도를 볼 수 있습니다.\n\n{compare_txt}")
             elif best_units > current_units:
                 hint = ("info", f"{head}\n\n최대안({best_style}안 {best_units:,}세대)과 차이가 {NEAR_TIE_RATIO:.0%} 이내라 사실상 최대입니다.\n\n{compare_txt}")
             else:
@@ -1357,7 +1357,7 @@ with col_viz:
     FAR_SEARCH_MAX_FLOORS = 100     # 층수 입력 상한과 동일
     FAR_REACH_RATIO = 0.98          # 상한의 98% 이상이면 달성으로 봄 (동 단위 배치라 딱 맞추기 어려움)
     with far_box:
-        plan_now = st.session_state.get('shown_plan', '혼합')
+        plan_now = st.session_state.get('shown_plan', '탑상형')
         with st.expander(f"🎯 용적률 상한({max_far}%) 달성에 필요한 층수 찾기", expanded='far_search' in st.session_state):
             st.caption(f"다른 조건은 그대로 두고 **최고 층수만 올려 가며** '{plan_now}안'을 다시 계산해, 용적률 상한에 닿는 최저 층수를 찾습니다 "
                        f"(동 단위로 배치해 딱 맞추기 어려우므로 상한의 {FAR_REACH_RATIO:.0%} 이상이면 달성으로 봅니다). "
