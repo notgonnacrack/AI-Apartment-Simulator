@@ -2,7 +2,7 @@
 
 새 대화에서 이어서 작업할 때 이 파일을 먼저 읽게 하면 됩니다. 상세 이력은 `AI_HANDOFF.md`, 사용법은 `app_manual.md`에 있습니다.
 
-## 1. 현재 상태 — v2.4 (2026-10-09)
+## 1. 현재 상태 — v2.5 (2026-10-09)
 - **실행:** `python -m streamlit run app.py` → http://localhost:8501
 - **배포:** https://jinwoo-apt.streamlit.app/ (GitHub `notgonnacrack/AI-Apartment-Simulator`, `main` 브랜치)
 - **GitHub 반영:** 마지막 푸시는 2026-10-04 커밋 `7180598`입니다. **v2.0~v2.2(줄 배치 엔진 등)와 `.github/`(앱 잠들지 않게 하는 자동 실행)는 아직 올리지 않았습니다.**

@@ -357,7 +357,7 @@ def _proj(w, dist):
     return Polygon([(wx1, wy1), (wx2, wy2), (wx2 + dx * dist, wy2 + dy * dist), (wx1 + dx * dist, wy1 + dy * dist)])
 
 @st.cache_data(show_spinner=False)
-def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=0, trap_top=0, trap_height=0, l_w=0, l_l=0, l_w_inner=0, l_l_inner=0, eff=DEFAULT_EFF, layout_version=39, flip_h=False, flip_v=False, plate_only=False, tower_only=False, allowed_groups=None, min_floors=5, min_tower_ratio=0.0, low_ratio=0.0):
+def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, setback_x, setback_y, min_ns_dist, side_dist, max_far, max_bcr, selected_sizes, size_ratios, school_n, school_s, school_e, school_w, road_n, road_s, road_e, road_w, sunlight_dir, trap_bottom=0, trap_top=0, trap_height=0, l_w=0, l_l=0, l_w_inner=0, l_l_inner=0, eff=DEFAULT_EFF, layout_version=40, flip_h=False, flip_v=False, plate_only=False, tower_only=False, allowed_groups=None, min_floors=5, min_tower_ratio=0.0, low_ratio=0.0):
 
     if site_shape_type == "직사각형":
         base_site_poly = Polygon([(0,0), (site_w,0), (site_w,site_l), (0,site_l)])
@@ -867,6 +867,38 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
                         lo_l = mid
                 rows = best_rows
 
+        # ---- 줄 간격 고르게: DP는 세대수가 같은 여러 위치 중 하나를 고르므로 남는 여유가 한 줄 사이에 몰릴 수 있음
+        #      (정남방향처럼 북쪽 사선이 없으면 두드러짐) → 줄 구성(형태·층수)과 세대수는 그대로 두고,
+        #      각 줄이 갈 수 있는 가장 남쪽·가장 북쪽 위치의 가운데로 옮겨 여유를 줄 사이에 고르게 나눔
+        if len(rows) > 1:
+            idx = [int(round((y - ys[0]) / y_step)) for y, _, _ in rows]
+            js = [Hs.index(h) for _, h, _ in rows]
+            ks_ = [k for _, _, k in rows]
+            need = [val[ks_[n], idx[n], js[n]] - 1e-9 for n in range(len(rows))]
+            feas = [np.where(val[ks_[n], :, js[n]] >= need[n])[0] for n in range(len(rows))]
+            gap_i = [off[ks_[n - 1], js[n - 1], ks_[n], js[n]] for n in range(1, len(rows))]
+            early, late = [], [None] * len(rows)
+            for n in range(len(rows)):                       # 가장 남쪽으로 붙인 위치
+                lo_i = feas[n][0] if n == 0 else early[-1] + gap_i[n - 1]
+                cand = feas[n][feas[n] >= lo_i]
+                early.append(int(cand[0]) if len(cand) else idx[n])
+            for n in range(len(rows) - 1, -1, -1):          # 가장 북쪽으로 붙인 위치
+                hi_i = feas[n][-1] if n == len(rows) - 1 else late[n + 1] - gap_i[n]
+                cand = feas[n][feas[n] <= hi_i]
+                late[n] = int(cand[-1]) if len(cand) else idx[n]
+            new_idx, prev = [], None
+            for n in range(len(rows)):
+                lo_i = early[n] if prev is None else max(early[n], prev + gap_i[n - 1])
+                cand = feas[n][(feas[n] >= lo_i) & (feas[n] <= max(late[n], lo_i))]
+                if not len(cand):
+                    new_idx = idx
+                    break
+                target = (early[n] + late[n]) / 2.0
+                pick = int(cand[np.argmin(np.abs(cand - target))])
+                new_idx.append(pick)
+                prev = pick
+            rows = [(float(ys[i]), h, k) for i, (_, h, k) in zip(new_idx, rows)]
+
         # ---- 줄 채우기: 평형 비율이 부족한 평형부터, 판상은 가운데 정렬, 탑상은 앞 탑상 줄과 반 피치 엇갈림 ----
         #      동 자리는 최저 층수로 놓을 수 있는 구간에 일정 간격으로 잡고, 동마다 그 자리 최고 층수(줄 최고 층수 이하)를 줌
         counts = {s: 0 for s in selected_sizes}
@@ -1035,7 +1067,7 @@ def auto_optimize_layout(site_w, site_l, site_shape_type, floors, h_multiplier, 
 
 APP_TITLE = "속 터져서 내가 직접 만들어 본 공동주택 假배치"
 # 버전 규칙: 배치 엔진·구조가 크게 바뀌면 앞자리(+1.0), 기능 추가·수정은 뒷자리(+0.1). 수정할 때마다 날짜와 함께 갱신
-APP_VERSION = "v2.4"
+APP_VERSION = "v2.5"
 APP_UPDATED = "2026-10-09"
 st.set_page_config(layout="wide", page_title=APP_TITLE)
 
